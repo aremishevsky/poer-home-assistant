@@ -46,6 +46,90 @@ Use the following steps to generate:
 
 - If you no longer want to use Home Assistant related functions, please click the Release button.
 
+## Lovelace cards
+
+The integration ships two dashboard cards. They are loaded automatically: no need to add a resource in
+*Settings → Dashboards → Resources*. After installing or updating, restart Home Assistant and hard-refresh the browser
+(Ctrl/Cmd + Shift + R).
+
+Both cards have a visual editor (*Edit dashboard → Add card → POER Overview / POER Thermostat*), or can be configured in YAML.
+
+### POER Overview — `custom:poer-overview-card`
+
+Grid of thermostat tiles: current temperature, target, status (Auto / Heat / Off / Away / Offline) and humidity.
+Zones that are heating get an orange stripe. Tap a tile to open its details.
+
+```yaml
+type: custom:poer-overview-card
+title: Heating
+title_icon: mdi:radiator
+columns: 3
+background: true
+show_heating_count: true
+groups:
+  - 1st floor
+  - 2nd floor
+  - Basement
+entities:
+  - entity: climate.zal
+    group: 1st floor
+  - entity: climate.kabinet
+    group: 2nd floor
+  - climate.office
+```
+
+| Option | Type | Required | Default | Values / description |
+|---|---|---|---|---|
+| `type` | string | **yes** | — | `custom:poer-overview-card` |
+| `title` | string | no | — | Card title. Leave empty for no title. |
+| `title_icon` | string | no | — | Icon in front of the title, e.g. `mdi:radiator` |
+| `columns` | number | no | `3` | Tiles per row, `1`–`8` |
+| `background` | boolean | no | `true` | `false` makes the card transparent, without border, shadow and padding |
+| `show_heating_count` | boolean | no | `true` | Show "Heating: N" in the header |
+| `groups` | list of strings | no | — | Zone names, in display order. Thermostats without a group are shown last under "Other". |
+| `entities` | list | no | all POER thermostats | Thermostats to show, in display order. Each item is either an entity id (`climate.xxx`) or an object (see below). Thermostats not in the list are hidden. |
+
+`entities` item as an object:
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `entity` | string | **yes** | Entity id, `climate.xxx` |
+| `group` | string | no | One of the names from `groups` |
+
+In the visual editor, groups and thermostats can be reordered by dragging the ⠿ handle or with the ▲▼ buttons.
+Untick a thermostat to hide it.
+
+### POER Thermostat — `custom:poer-thermostat-card`
+
+One zone: current temperature, humidity, status, target with up/down controls, mode and preset buttons.
+The card is highlighted while the zone is heating. Tap the header to open the details.
+
+```yaml
+type: custom:poer-thermostat-card
+entity: climate.kabinet
+name: Office
+icon: mdi:thermostat
+icon_size: 32
+status_icon: mdi:fire
+status_icon_size: 32
+controls: vertical
+show_modes: true
+show_presets: true
+```
+
+| Option | Type | Required | Default | Values / description |
+|---|---|---|---|---|
+| `type` | string | **yes** | — | `custom:poer-thermostat-card` |
+| `entity` | string | **yes** | — | POER thermostat, `climate.xxx` |
+| `name` | string | no | entity name | Name shown in the header |
+| `icon` | string | no | `mdi:thermostat` | Header icon |
+| `icon_size` | number | no | `32` | Header icon size in px, `16`–`96` |
+| `status_icon` | string | no | `mdi:fire` | Icon that lights up while heating |
+| `status_icon_size` | number | no | `32` | Heating icon size in px, `16`–`96` |
+| `controls` | string | no | `vertical` | `vertical`: chevrons above and below the target. `horizontal`: − and + to the left and right. |
+| `show_modes` | boolean | no | `true` | Show the Auto / Heat / Off buttons |
+| `show_presets` | boolean | no | `true` | Show the Home / Away buttons |
+
 
 ### Config
 

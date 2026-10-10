@@ -12,8 +12,11 @@
  *   show_presets: true                     – Home / Away buttons
  *
  *   type: custom:poer-overview-card        – grid of zones
- *   title: Heating                         – optional
+ *   title: Heating                         – optional, no title when empty
+ *   title_icon: mdi:radiator               – optional
  *   columns: 3                             – optional, tiles per row
+ *   background: true                       – false = transparent, no padding
+ *   show_heating_count: true               – "Heating: N" in the header
  *   groups: [1st floor, 2nd floor]         – optional, group order
  *   entities:                              – optional, defaults to all POER thermostats
  *     - entity: climate.kabinet
@@ -36,7 +39,7 @@ const THERMOSTAT_DEFAULTS = {
   show_modes: true,
   show_presets: true,
 };
-const OVERVIEW_DEFAULTS = { columns: 3 };
+const OVERVIEW_DEFAULTS = { columns: 3, background: true, show_heating_count: true };
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -265,11 +268,22 @@ class PoerThermostatCard extends HTMLElement {
         .heating .head .icon { color: var(--poer-heat); }
         .head .flame { --mdc-icon-size: ${Number(c.status_icon_size) || 32}px; }
         .head .name { font-size: 18px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .main { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 10px; }
-        .current { font-size: 48px; font-weight: 300; line-height: 1; }
+        ha-card { container-type: inline-size; }
+        .main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 14px 0 10px; }
+        .current { font-size: 48px; font-weight: 300; line-height: 1; white-space: nowrap; }
         .current small { font-size: 18px; vertical-align: top; margin-left: 2px; }
-        .meta { margin-top: 8px; display: flex; align-items: center; gap: 10px; font-size: 13px; }
+        /* left column is as wide as the temperature; the meta row ellipsizes instead of widening it */
+        .main > .left { flex: 1 1 auto; min-width: min-content; }
+        .meta { margin-top: 8px; display: flex; align-items: center; gap: 10px; font-size: 13px; white-space: nowrap; width: 0; min-width: 100%; }
+        .meta > * { flex: none; }
         .meta ha-icon { --mdc-icon-size: 16px; vertical-align: -3px; }
+        .meta .action { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+        .setpoint { flex: none; margin-left: auto; }
+        @container (max-width: 260px) {
+          .current { font-size: 38px; }
+          .val { font-size: 20px; min-width: 52px; }
+          .round { width: 30px; height: 30px; }
+        }
         .setpoint { display: flex; align-items: center; gap: 6px; }
         .setpoint.vertical { flex-direction: column; gap: 0; }
         .val { min-width: 64px; text-align: center; font-size: 24px; font-weight: 500; line-height: 1.1; }
@@ -305,12 +319,12 @@ class PoerThermostatCard extends HTMLElement {
         </div>
 
         <div class="main">
-          <div>
+          <div class="left">
             <div class="current">${fmt(z.current)}<small>°C</small></div>
             <div class="meta muted">
               <span class="badge ${status.cls}">${esc(status.label)}</span>
               <span><ha-icon icon="mdi:water-percent"></ha-icon>${fmt(z.humidity, 0)}%</span>
-              <span>${z.heating ? "Heating" : "Idle"}</span>
+              <span class="action">${z.heating ? "Heating" : "Idle"}</span>
             </div>
           </div>
           ${this._setpointHtml(target, z.unavailable)}
@@ -474,6 +488,7 @@ class PoerOverviewCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     const items = overviewItems(this._hass, this._config);
     const groups = this._config.groups || [];
+    const c = this._config;
     const heatingCount = items.filter((i) => this._hass.states[i.entity]?.attributes.hvac_action === "heating"
       && !isUnavailable(this._hass.states[i.entity])).length;
 
@@ -489,16 +504,30 @@ class PoerOverviewCard extends HTMLElement {
       const rest = items.filter((i) => !groups.includes(i.group));
       if (rest.length) sections.push(["Other", rest]);
       body = sections
-        .map(([g, list]) => `<div class="group">${esc(g)}</div>${this._grid(list)}`)
+        .map(([g, list], i) => `<div class="group ${i === 0 ? "first" : ""}">${esc(g)}</div>${this._grid(list)}`)
         .join("");
     }
 
+    const showCount = c.show_heating_count && heatingCount > 0;
+    const header = c.title || c.title_icon || showCount
+      ? `<div class="header">
+          ${c.title_icon ? `<ha-icon class="title-icon" icon="${esc(c.title_icon)}"></ha-icon>` : ""}
+          <span class="title">${esc(c.title || "")}</span>
+          ${showCount ? `<span class="muted">Heating: ${heatingCount}</span>` : ""}
+        </div>`
+      : "";
+
     this.shadowRoot.innerHTML = `
       <style>${BASE_STYLE}
-        .header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
-        .header .title { font-size: 18px; font-weight: 500; }
+        ha-card.no-bg {
+          background: none; box-shadow: none; border: none; padding: 0;
+          --ha-card-background: transparent; --ha-card-box-shadow: none; --ha-card-border-width: 0;
+        }
+        .header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        .header .title { flex: 1; min-width: 0; font-size: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .header .title-icon { --mdc-icon-size: 24px; color: var(--state-icon-color, var(--paper-item-icon-color)); }
         .group { font-size: 13px; font-weight: 500; color: var(--poer-muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 8px; }
-        .group:first-of-type { margin-top: 0; }
+        .group.first { margin-top: 0; }
         .grid { display: grid; grid-template-columns: repeat(${Number(this._config.columns) || 3}, minmax(0, 1fr)); gap: 8px; }
         .tile {
           padding: 10px 12px; border-radius: 12px; cursor: pointer;
@@ -517,12 +546,8 @@ class PoerOverviewCard extends HTMLElement {
         .bottom ha-icon { --mdc-icon-size: 14px; vertical-align: -2px; }
         .empty { padding: 8px 0; }
       </style>
-      <ha-card>
-        ${this._config.title || heatingCount ? `
-        <div class="header">
-          <span class="title">${esc(this._config.title || "")}</span>
-          <span class="muted">${heatingCount ? `Heating: ${heatingCount}` : ""}</span>
-        </div>` : ""}
+      <ha-card class="${c.background === false ? "no-bg" : ""}">
+        ${header}
         ${body}
       </ha-card>`;
   }
@@ -565,10 +590,23 @@ class PoerOverviewCardEditor extends HTMLElement {
     this._update({ entities });
   }
 
+  _moveRow(from, to) {
+    const rows = this._rows();
+    const lastOn = rows.filter((r) => r.on).length - 1;
+    if (to < 0 || to > lastOn || from === to) return;
+    this._saveRows(moveItem(rows, from, to));
+  }
+
+  _moveGroup(from, to) {
+    const groups = this._config.groups || [];
+    if (to < 0 || to >= groups.length || from === to) return;
+    this._update({ groups: moveItem(groups, from, to) });
+  }
+
   _onClick(e) {
     const el = e.target.closest("[data-act]");
     if (!el || el.tagName === "SELECT" || el.tagName === "INPUT") return;
-    const { act, idx } = el.dataset;
+    const { act, idx, list } = el.dataset;
     const i = Number(idx);
     const groups = [...(this._config.groups || [])];
 
@@ -581,12 +619,55 @@ class PoerOverviewCardEditor extends HTMLElement {
       this._config = { ...this._config, groups: groups.length ? groups : undefined };
       this._saveRows(rows);
     } else if (act === "up" || act === "down") {
-      const rows = this._rows();
       const j = act === "up" ? i - 1 : i + 1;
-      if (j < 0 || j >= rows.length || !rows[j].on) return;
-      [rows[i], rows[j]] = [rows[j], rows[i]];
-      this._saveRows(rows);
+      if (list === "groups") this._moveGroup(i, j);
+      else this._moveRow(i, j);
     }
+  }
+
+  // drag by the handle; works with mouse and touch
+  _onPointerDown(e) {
+    const handle = e.target.closest(".handle");
+    if (!handle) return;
+    const line = handle.closest(".line");
+    const listEl = line.parentElement;
+    const lines = [...listEl.querySelectorAll(".line.drag")];
+    const from = lines.indexOf(line);
+    if (from < 0) return;
+
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const rects = lines.map((l) => l.getBoundingClientRect());
+    const h = rects[from].height;
+    let to = from;
+    line.classList.add("dragging");
+
+    const onMove = (ev) => {
+      const y = ev.clientY;
+      line.style.transform = `translateY(${y - startY}px)`;
+      to = rects.filter((r, k) => k !== from && r.top + r.height / 2 < y).length;
+      lines.forEach((l, k) => {
+        if (k === from) return;
+        let shift = 0;
+        if (from < to && k > from && k <= to) shift = -h;
+        else if (to < from && k >= to && k < from) shift = h;
+        l.style.transform = shift ? `translateY(${shift}px)` : "";
+      });
+    };
+    const onEnd = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onEnd);
+      handle.removeEventListener("pointercancel", onEnd);
+      lines.forEach((l) => (l.style.transform = ""));
+      line.classList.remove("dragging");
+      if (to === from) return;
+      if (listEl.dataset.list === "groups") this._moveGroup(from, to);
+      else this._moveRow(from, to);
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onEnd);
+    handle.addEventListener("pointercancel", onEnd);
   }
 
   _onChange(e) {
@@ -624,14 +705,25 @@ class PoerOverviewCardEditor extends HTMLElement {
         <style>
           .poer-ed h3 { font-size: 14px; font-weight: 500; margin: 20px 0 6px; }
           .poer-ed .hint { font-size: 12px; color: var(--secondary-text-color); margin: 0 0 8px; }
-          .poer-ed .line { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--divider-color); }
+          .poer-ed .line {
+            display: flex; align-items: center; gap: 8px; padding: 4px 0;
+            border-bottom: 1px solid var(--divider-color);
+            background: var(--card-background-color); transition: transform .15s;
+          }
+          .poer-ed .line.dragging { transition: none; position: relative; z-index: 1; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
           .poer-ed .line .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .poer-ed .line.off .nm { color: var(--secondary-text-color); }
+          .poer-ed .handle {
+            cursor: grab; touch-action: none; user-select: none;
+            color: var(--secondary-text-color); --mdc-icon-size: 20px;
+          }
+          .poer-ed .dragging .handle { cursor: grabbing; }
+          .poer-ed .handle-gap { width: 20px; flex: none; }
           .poer-ed input[type=text], .poer-ed select {
             font: inherit; padding: 6px 8px; border-radius: 6px;
             border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color);
           }
-          .poer-ed input[type=text] { flex: 1; }
+          .poer-ed input[type=text] { flex: 1; min-width: 0; }
           .poer-ed select { max-width: 40%; }
           .poer-ed input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--primary-color); }
           .poer-ed button {
@@ -643,22 +735,14 @@ class PoerOverviewCardEditor extends HTMLElement {
         </style>
         <div class="poer-ed"><div class="form"></div><div class="lists"></div></div>`;
       this._form = document.createElement("ha-form");
-      this._form.computeLabel = (s) => ({ title: "Title", columns: "Tiles per row" })[s.name] || s.name;
-      this._form.schema = [
-        {
-          type: "grid",
-          name: "",
-          schema: [
-            { name: "title", selector: { text: {} } },
-            { name: "columns", selector: { number: { min: 1, max: 8, mode: "box" } } },
-          ],
-        },
-      ];
+      this._form.computeLabel = (s) => OVERVIEW_LABELS[s.name] || s.name;
+      this._form.schema = OVERVIEW_SCHEMA;
       this._form.addEventListener("value-changed", (e) => this._update(e.detail.value));
       this.querySelector(".form").appendChild(this._form);
       const lists = this.querySelector(".lists");
       lists.addEventListener("click", (e) => this._onClick(e));
       lists.addEventListener("change", (e) => this._onChange(e));
+      lists.addEventListener("pointerdown", (e) => this._onPointerDown(e));
     }
 
     this._form.hass = this._hass;
@@ -667,12 +751,18 @@ class PoerOverviewCardEditor extends HTMLElement {
     const groups = this._config.groups || [];
     const rows = this._rows();
     const lastOn = rows.filter((r) => r.on).length - 1;
+    const handle = `<ha-icon class="handle" icon="mdi:drag" title="Drag to reorder"></ha-icon>`;
+    const arrows = (list, i, last) => `
+      <button data-act="up" data-list="${list}" data-idx="${i}" ${i === 0 ? "disabled" : ""} title="Move up">▲</button>
+      <button data-act="down" data-list="${list}" data-idx="${i}" ${i === last ? "disabled" : ""} title="Move down">▼</button>`;
 
     const groupHtml = groups
       .map(
         (g, i) => `
-        <div class="line">
+        <div class="line drag">
+          ${handle}
           <input type="text" value="${esc(g)}" data-act="rename" data-idx="${i}">
+          ${arrows("groups", i, groups.length - 1)}
           <button data-act="del-group" data-idx="${i}" title="Remove">✕</button>
         </div>`
       )
@@ -685,28 +775,62 @@ class PoerOverviewCardEditor extends HTMLElement {
     const rowHtml = rows
       .map(
         (r, i) => `
-        <div class="line ${r.on ? "" : "off"}">
+        <div class="line ${r.on ? "drag" : "off"}">
+          ${r.on ? handle : `<span class="handle-gap"></span>`}
           <input type="checkbox" data-act="toggle" data-idx="${i}" ${r.on ? "checked" : ""}>
           <span class="nm">${esc(nameOf(this._hass, r.entity))}</span>
           ${r.on && groups.length ? `<select data-act="group" data-idx="${i}">${groupOptions(r.group)}</select>` : ""}
-          ${r.on ? `
-            <button data-act="up" data-idx="${i}" ${i === 0 ? "disabled" : ""} title="Move up">▲</button>
-            <button data-act="down" data-idx="${i}" ${i === lastOn ? "disabled" : ""} title="Move down">▼</button>` : ""}
+          ${r.on ? arrows("rows", i, lastOn) : ""}
         </div>`
       )
       .join("");
 
     this.querySelector(".lists").innerHTML = `
       <h3>Groups</h3>
-      <p class="hint">E.g. 1st floor, 2nd floor, Basement. Shown in this order.</p>
-      ${groupHtml}
+      <p class="hint">E.g. 1st floor, 2nd floor, Basement. Drag or ▲▼ to set the order.</p>
+      <div data-list="groups">${groupHtml}</div>
       <button class="add" data-act="add-group">+ Add group</button>
 
       <h3>Thermostats</h3>
-      <p class="hint">Tick to show, ▲▼ to reorder${groups.length ? ", pick a group for each" : ""}.</p>
-      ${rowHtml || `<p class="hint">No POER thermostats found</p>`}`;
+      <p class="hint">Tick to show, drag or ▲▼ to reorder${groups.length ? ", pick a group for each" : ""}.</p>
+      <div data-list="rows">${rowHtml || `<p class="hint">No POER thermostats found</p>`}</div>`;
   }
 }
+
+const moveItem = (arr, from, to) => {
+  const out = [...arr];
+  const [item] = out.splice(from, 1);
+  out.splice(to, 0, item);
+  return out;
+};
+
+const OVERVIEW_SCHEMA = [
+  {
+    type: "grid",
+    name: "",
+    schema: [
+      { name: "title", selector: { text: {} } },
+      { name: "title_icon", selector: { icon: {} } },
+    ],
+  },
+  { name: "columns", selector: { number: { min: 1, max: 8, mode: "box" } } },
+  {
+    type: "grid",
+    name: "",
+    schema: [
+      { name: "background", selector: { boolean: {} } },
+      { name: "show_heating_count", selector: { boolean: {} } },
+    ],
+  },
+];
+
+const OVERVIEW_LABELS = {
+  title: "Title (empty = no title)",
+  title_icon: "Title icon",
+  columns: "Tiles per row",
+  background: "Card background",
+  show_heating_count: "Show \"Heating: N\"",
+};
 
 /* ============================================================ register == */
 
