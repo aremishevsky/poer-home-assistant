@@ -110,6 +110,11 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
             {},
         )
 
+    @property
+    def available(self) -> bool:
+        """Return True if the device was present in the last update."""
+        return super().available and bool(self.device_data)
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Update entity when coordinator updates."""
@@ -146,7 +151,7 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
         # if preset is not None:
         #     self._attr_preset_mode = self._map_preset_mode(preset)
 
-    def _map_hvac_mode(self, mode: str) -> HVACMode:
+    def _map_hvac_mode(self, mode: str | None) -> HVACMode | None:
         """Map HVAC mode from device value."""
         mode_map = {
             "auto": HVACMode.AUTO,
@@ -154,7 +159,7 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
             "heat": HVACMode.HEAT,
             "off": HVACMode.OFF,
         }
-        return mode_map.get(mode, HVACMode.OFF)
+        return mode_map.get(mode)
 
     def _map_hvac_action(self, action: str) -> HVACAction:
         """Map HVAC action from device value."""
@@ -165,7 +170,7 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
         }
         return action_map.get(action, HVACAction.IDLE)
 
-    def _map_preset_mode(self, preset: str) -> str:
+    def _map_preset_mode(self, preset: str | None) -> str | None:
         """Map preset mode from device value."""
         preset_map = {
             "home": PRESET_HOME,
@@ -174,7 +179,7 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
             # "eco": PRESET_ECO,
             # "none": PRESET_NONE,
         }
-        return preset_map.get(preset, PRESET_HOME)
+        return preset_map.get(preset)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -201,6 +206,7 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
             endpoint = "set_temp"
             payload = {"temperature": temp}
             self._attr_target_temperature = temp  # 乐观更新
+            self.async_write_ha_state()
         # elif target_temp_low is not None and target_temp_high is not None:
         #     endpoint = "set_temp_range"
         #     payload = {"low": target_temp_low, "high": target_temp_high}
@@ -214,9 +220,10 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
 
             if not success:
                 self._update_attributes()  # 失败时恢复之前状态
+                self.async_write_ha_state()
 
             # 刷新数据以获取最新状态
-            self.async_schedule_update_ha_state()
+            await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
@@ -231,20 +238,23 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
             _LOGGER.error("Unsupported mode: %s", hvac_mode)
             return
 
-        # 乐观更新
+        # 乐观更新 (选择模式会退出 away/eco)
         self._attr_hvac_mode = hvac_mode
+        self._attr_preset_mode = PRESET_HOME
         self.async_write_ha_state()
 
         # 发送命令
         success = await self.coordinator.send_command(
             self.device_id,
             "set_mode",
-            {"mode": device_mode, "preset": self._attr_preset_mode},
+            {"mode": device_mode, "preset": "home"},
         )
 
         if not success:
             self._update_attributes()  # 失败时恢复之前状态
             self.async_write_ha_state()
+
+        await self.coordinator.async_request_refresh()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set preset mode."""
@@ -268,9 +278,11 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
         success = await self.coordinator.send_command(
             self.device_id,
             "set_mode",
-            {"mode": self._attr_hvac_mode, "preset": device_preset},
+            {"mode": self._attr_hvac_mode or "heat", "preset": device_preset},
         )
 
         if not success:
             self._update_attributes()  # 失败时恢复之前状态
             self.async_write_ha_state()
+
+        await self.coordinator.async_request_refresh()
