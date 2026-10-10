@@ -1,0 +1,4 @@
+# Temporary files which would be ignored by Git
+tmp/
+
+.idea/
