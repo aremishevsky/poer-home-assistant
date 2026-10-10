@@ -21,7 +21,7 @@
  *     - climate.office                     – no group
  */
 
-const VERSION = "1.1.0";
+const VERSION = "1.0.1-dev";
 
 const MODE_LABELS = { auto: "Auto", heat: "Heat", off: "Off" };
 const PRESET_LABELS = { home: "Home", away: "Away" };
