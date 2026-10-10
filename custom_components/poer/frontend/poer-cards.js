@@ -24,7 +24,7 @@
  *     - climate.office                     – no group
  */
 
-const VERSION = "1.0.1-dev-3";
+const VERSION = "1.0.1-dev-4";
 
 const MODE_LABELS = { auto: "Auto", heat: "Heat", off: "Off" };
 const PRESET_LABELS = { home: "Home", away: "Away" };
@@ -120,13 +120,16 @@ const BASE_STYLE = `
   .badge {
     display: inline-flex; align-items: center;
     font-size: 11px; font-weight: 500; line-height: 1;
-    padding: 3px 7px; border-radius: 10px;
-    color: #fff; background: var(--poer-off);
+    padding: 2px 6px; border-radius: 10px;
+    color: var(--poer-off); border: 1px solid currentColor; background: none;
   }
-  .badge.heat { background: var(--poer-heat); }
-  .badge.auto { background: var(--poer-auto); }
-  .badge.away { background: var(--poer-away); }
-  .badge.offline { background: var(--disabled-text-color, #bdbdbd); }
+  .badge.heat { color: var(--poer-heat); }
+  .badge.auto { color: var(--poer-auto); }
+  .badge.away { color: var(--poer-away); }
+  .badge.offline { color: var(--disabled-text-color, #bdbdbd); }
+  /* icon + value on one line, icon centred on the text */
+  .hum { display: inline-flex; align-items: center; gap: 1px; white-space: nowrap; }
+  .hum ha-icon { display: inline-flex; }
   .muted { color: var(--poer-muted); }
   .unavail { opacity: .45; }
 `;
@@ -278,7 +281,7 @@ class PoerThermostatCard extends HTMLElement {
         .main > .left { flex: 1 1 auto; min-width: min-content; }
         .meta { margin-top: 8px; display: flex; align-items: center; gap: 10px; font-size: 13px; white-space: nowrap; width: 0; min-width: 100%; }
         .meta > * { flex: none; }
-        .meta ha-icon { --mdc-icon-size: 16px; vertical-align: -3px; }
+        .meta ha-icon { --mdc-icon-size: 16px; }
         .meta .action { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
         .setpoint { flex: none; margin-left: auto; }
         @container (max-width: 260px) {
@@ -327,7 +330,7 @@ class PoerThermostatCard extends HTMLElement {
             <div class="current">${fmt(z.current)}<small>°C</small></div>
             <div class="meta muted">
               <span class="badge ${status.cls}">${esc(status.label)}</span>
-              <span><ha-icon icon="mdi:water-percent"></ha-icon>${fmt(z.humidity, 0)}%</span>
+              <span class="hum"><ha-icon icon="mdi:water-percent"></ha-icon>${fmt(z.humidity, 0)}%</span>
               <span class="action">${z.heating ? "Heating" : "Idle"}</span>
             </div>
           </div>
@@ -482,7 +485,7 @@ class PoerOverviewCard extends HTMLElement {
         </div>
         <div class="bottom">
           <span class="badge ${status.cls}">${esc(status.label)}</span>
-          <span class="muted"><ha-icon icon="mdi:water-percent"></ha-icon>${fmt(z.humidity, 0)}%</span>
+          <span class="hum muted"><ha-icon icon="mdi:water-percent"></ha-icon>${fmt(z.humidity, 0)}%</span>
         </div>
       </div>`;
   }
@@ -526,10 +529,8 @@ class PoerOverviewCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>${BASE_STYLE}
-        ha-card.no-bg {
-          background: none; box-shadow: none; border: none; padding: 0;
-          --ha-card-background: transparent; --ha-card-box-shadow: none; --ha-card-border-width: 0;
-        }
+        /* outer card invisible; theme --ha-card-* vars stay intact for the tiles */
+        ha-card.no-bg { background: none; box-shadow: none; border: none; padding: 0; }
         .header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
         .header .title { flex: 1; min-width: 0; font-size: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .header .title-icon { --mdc-icon-size: 24px; color: var(--state-icon-color, var(--paper-item-icon-color)); }
@@ -542,6 +543,13 @@ class PoerOverviewCard extends HTMLElement {
           box-shadow: inset 3px 0 0 transparent;
         }
         .tile.heating { box-shadow: inset 3px 0 0 var(--poer-heat); }
+        .no-bg .tile {
+          background: var(--ha-card-background, var(--card-background-color, #fff));
+          border-radius: var(--ha-card-border-radius, 12px);
+          border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
+          box-shadow: var(--ha-card-box-shadow, none);
+        }
+        .no-bg .tile.heating { box-shadow: inset 3px 0 0 var(--poer-heat), var(--ha-card-box-shadow, 0 0 0 transparent); }
         .top { display: flex; align-items: center; gap: 4px; }
         .top ha-icon { --mdc-icon-size: 18px; }
         .top .flame { margin: -6px; padding: 6px; } /* bigger tap target */
@@ -551,7 +559,7 @@ class PoerOverviewCard extends HTMLElement {
         .temp small { font-size: 14px; vertical-align: top; }
         .target { font-size: 13px; white-space: nowrap; }
         .bottom { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 12px; }
-        .bottom ha-icon { --mdc-icon-size: 14px; vertical-align: -2px; }
+        .bottom ha-icon { --mdc-icon-size: 14px; }
         .empty { padding: 8px 0; }
       </style>
       <ha-card class="${c.background === false ? "no-bg" : ""}">
