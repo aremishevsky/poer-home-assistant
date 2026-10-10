@@ -24,7 +24,7 @@
  *     - climate.office                     – no group
  */
 
-const VERSION = "1.0.1-dev-2";
+const VERSION = "1.0.1-dev-3";
 
 const MODE_LABELS = { auto: "Auto", heat: "Heat", off: "Off" };
 const PRESET_LABELS = { home: "Home", away: "Away" };
@@ -177,6 +177,7 @@ class PoerThermostatCard extends HTMLElement {
     const entity_id = this._config.entity;
 
     if (action === "more-info") return moreInfo(this, entity_id);
+    if (action === "history") return PoerHistoryDialog.open(this._hass, entity_id, this._config.name || zoneInfo(st).name);
     if (isUnavailable(st)) return;
     if (action === "mode") this._hass.callService("climate", "set_hvac_mode", { entity_id, hvac_mode: value });
     else if (action === "preset") this._hass.callService("climate", "set_preset_mode", { entity_id, preset_mode: value });
@@ -267,6 +268,7 @@ class PoerThermostatCard extends HTMLElement {
         .head .icon { --mdc-icon-size: ${Number(c.icon_size) || 32}px; color: var(--state-icon-color, var(--paper-item-icon-color)); }
         .heating .head .icon { color: var(--poer-heat); }
         .head .flame { --mdc-icon-size: ${Number(c.status_icon_size) || 32}px; }
+        .history { cursor: pointer; }
         .head .name { font-size: 18px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         ha-card { container-type: inline-size; }
         .main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 14px 0 10px; }
@@ -315,7 +317,9 @@ class PoerThermostatCard extends HTMLElement {
         <div class="head" data-action="more-info">
           <ha-icon class="icon" icon="${esc(c.icon)}"></ha-icon>
           <span class="name">${esc(c.name || z.name)}</span>
-          ${z.unavailable ? `<span class="badge offline">Offline</span>` : `<ha-icon class="flame" icon="${esc(c.status_icon)}"></ha-icon>`}
+          ${z.unavailable
+            ? `<span class="badge offline history" data-action="history" title="History">Offline</span>`
+            : `<ha-icon class="flame history" data-action="history" title="History" icon="${esc(c.status_icon)}"></ha-icon>`}
         </div>
 
         <div class="main">
@@ -430,7 +434,10 @@ class PoerOverviewCard extends HTMLElement {
       this.attachShadow({ mode: "open" });
       this.shadowRoot.addEventListener("click", (e) => {
         const tile = e.target.closest("[data-entity]");
-        if (tile) moreInfo(this, tile.dataset.entity);
+        if (!tile) return;
+        const id = tile.dataset.entity;
+        if (e.target.closest("[data-history]")) PoerHistoryDialog.open(this._hass, id, nameOf(this._hass, id));
+        else moreInfo(this, id);
       });
     }
     this._lastKey = undefined;
@@ -468,7 +475,7 @@ class PoerOverviewCard extends HTMLElement {
 
     return `
       <div class="tile ${z.unavailable ? "unavail" : ""} ${z.heating ? "heating" : ""}" data-entity="${esc(id)}">
-        <div class="top"><span class="name">${esc(z.name)}</span><ha-icon class="flame" icon="mdi:fire"></ha-icon></div>
+        <div class="top"><span class="name">${esc(z.name)}</span><ha-icon class="flame" data-history title="History" icon="mdi:fire"></ha-icon></div>
         <div class="temps">
           <span class="temp">${fmt(z.current)}<small>°</small></span>
           <span class="target muted">→ ${fmt(z.target)}°</span>
@@ -537,6 +544,7 @@ class PoerOverviewCard extends HTMLElement {
         .tile.heating { box-shadow: inset 3px 0 0 var(--poer-heat); }
         .top { display: flex; align-items: center; gap: 4px; }
         .top ha-icon { --mdc-icon-size: 18px; }
+        .top .flame { margin: -6px; padding: 6px; } /* bigger tap target */
         .name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .temps { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin: 4px 0; }
         .temp { font-size: 26px; font-weight: 300; }
@@ -832,6 +840,263 @@ const OVERVIEW_LABELS = {
   show_heating_count: "Show \"Heating: N\"",
 };
 
+/* =============================================================== history == */
+
+const HISTORY_RANGES = [6, 24, 168];
+
+// climate history -> [{t, cur, tgt, heat}] (t in ms), one entry per recorded change
+function parseHistory(states, start) {
+  return states.map((st) => {
+    const a = st.a || {};
+    const unavailable = st.s === "unavailable" || st.s === "unknown";
+    return {
+      t: Math.max(st.lu * 1000, start),
+      cur: unavailable ? null : a.current_temperature ?? null,
+      tgt: unavailable ? null : a.temperature ?? null,
+      heat: !unavailable && a.hvac_action === "heating",
+    };
+  });
+}
+
+const fmtDuration = (ms) => {
+  const m = Math.round(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+};
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+class PoerHistoryDialog extends HTMLElement {
+  static open(hass, entityId, name) {
+    document.querySelector("poer-history-dialog")?.remove();
+    const d = document.createElement("poer-history-dialog");
+    d._hass = hass;
+    d._entityId = entityId;
+    d._name = name;
+    document.body.appendChild(d);
+  }
+
+  connectedCallback() {
+    this.attachShadow({ mode: "open" });
+    this._onKey = (e) => e.key === "Escape" && this.remove();
+    document.addEventListener("keydown", this._onKey);
+    this.shadowRoot.innerHTML = `
+      <style>${BASE_STYLE}
+        .backdrop {
+          position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.45);
+          display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;
+        }
+        .dlg {
+          width: min(760px, 100%); max-height: 100%; overflow: auto; box-sizing: border-box;
+          background: var(--card-background-color, #fff); color: var(--primary-text-color);
+          border-radius: var(--ha-card-border-radius, 12px); padding: 16px 16px 12px;
+          box-shadow: 0 8px 32px rgba(0,0,0,.3); font-family: var(--paper-font-body1_-_font-family, inherit);
+        }
+        .top { display: flex; align-items: center; gap: 8px; }
+        .top .ttl { flex: 1; min-width: 0; font-size: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .chips { display: flex; gap: 4px; }
+        button {
+          font: inherit; font-size: 12px; border: none; border-radius: 12px; padding: 4px 10px; cursor: pointer;
+          background: var(--secondary-background-color); color: var(--primary-text-color);
+        }
+        button.on { background: var(--primary-color); color: #fff; }
+        button.x { font-size: 16px; padding: 2px 8px; background: none; }
+        .summary { margin: 8px 0 4px; font-size: 13px; }
+        .summary b { color: var(--poer-heat); font-weight: 500; }
+        .chart { position: relative; height: 260px; margin-top: 4px; }
+        .chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+        .chart .msg { position: absolute; inset: 0; display: grid; place-items: center; }
+        .axis { fill: var(--poer-muted); font-size: 10px; }
+        .grid line { stroke: var(--divider-color, #e0e0e0); stroke-width: 1; }
+        .cur { fill: none; stroke: var(--primary-color, #03a9f4); stroke-width: 2; stroke-linejoin: round; }
+        .tgt { fill: none; stroke: var(--poer-heat); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .9; }
+        .heat-bg { fill: var(--poer-heat); opacity: .13; }
+        .heat-bar { fill: var(--poer-heat); }
+        .cursor { stroke: var(--poer-muted); stroke-width: 1; }
+        .tip {
+          position: absolute; top: 4px; pointer-events: none; white-space: nowrap;
+          background: var(--card-background-color, #fff); border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px; padding: 6px 8px; font-size: 12px; line-height: 1.5; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+        }
+        .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12px; }
+        .legend i { display: inline-block; width: 16px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid; }
+        .legend .l-cur { border-color: var(--primary-color, #03a9f4); }
+        .legend .l-tgt { border-color: var(--poer-heat); border-top-style: dashed; }
+        .legend .l-heat { height: 10px; border: none; background: var(--poer-heat); opacity: .35; border-radius: 2px; }
+      </style>
+      <div class="backdrop">
+        <div class="dlg" role="dialog" aria-label="Heating history">
+          <div class="top">
+            <span class="ttl">${esc(this._name)}</span>
+            <div class="chips">${HISTORY_RANGES.map((h) => `<button data-h="${h}">${h < 48 ? `${h}h` : `${h / 24}d`}</button>`).join("")}</div>
+            <button class="x" title="Close">✕</button>
+          </div>
+          <div class="summary muted">&nbsp;</div>
+          <div class="chart"><div class="msg muted">Loading…</div></div>
+          <div class="legend muted">
+            <span><i class="l-cur"></i>Current</span>
+            <span><i class="l-tgt"></i>Target</span>
+            <span><i class="l-heat"></i>Heating</span>
+          </div>
+        </div>
+      </div>`;
+    const root = this.shadowRoot;
+    root.querySelector(".backdrop").addEventListener("click", (e) => {
+      if (e.target.classList.contains("backdrop") || e.target.closest(".x")) this.remove();
+      const chip = e.target.closest("[data-h]");
+      if (chip) this._load(Number(chip.dataset.h));
+    });
+    this._load(24);
+  }
+
+  disconnectedCallback() {
+    document.removeEventListener("keydown", this._onKey);
+  }
+
+  async _load(hours) {
+    this._hours = hours;
+    const root = this.shadowRoot;
+    root.querySelectorAll("[data-h]").forEach((b) => b.classList.toggle("on", Number(b.dataset.h) === hours));
+    root.querySelector(".chart").innerHTML = `<div class="msg muted">Loading…</div>`;
+
+    const end = Date.now();
+    const start = end - hours * 3600e3;
+    try {
+      const res = await this._hass.callWS({
+        type: "history/history_during_period",
+        start_time: new Date(start).toISOString(),
+        end_time: new Date(end).toISOString(),
+        entity_ids: [this._entityId],
+        include_start_time_state: true,
+        significant_changes_only: false,
+        minimal_response: false,
+        no_attributes: false,
+      });
+      if (this._hours !== hours) return; // another range was picked meanwhile
+      this._data = { points: parseHistory(res[this._entityId] || [], start), start, end };
+      this._draw();
+    } catch (err) {
+      root.querySelector(".chart").innerHTML = `<div class="msg muted">Failed to load history: ${esc(err.message || err.code || err)}</div>`;
+    }
+  }
+
+  _draw() {
+    const { points, start, end } = this._data;
+    const root = this.shadowRoot;
+    const chart = root.querySelector(".chart");
+
+    // duration of each point = until the next one (or now)
+    const segs = points.map((p, i) => ({ ...p, t2: i + 1 < points.length ? points[i + 1].t : end }));
+    const heatMs = segs.filter((s) => s.heat).reduce((sum, s) => sum + (s.t2 - s.t), 0);
+    root.querySelector(".summary").innerHTML = points.length
+      ? `Heating <b>${fmtDuration(heatMs)}</b> (${Math.round((heatMs / (end - start)) * 100)}%) in the last ${this._hours < 48 ? `${this._hours} hours` : `${this._hours / 24} days`}`
+      : "&nbsp;";
+    if (!points.length) {
+      chart.innerHTML = `<div class="msg muted">No history for this period</div>`;
+      return;
+    }
+
+    const W = chart.clientWidth || 700;
+    const H = chart.clientHeight || 260;
+    const L = 34, R = 8, T = 8, B = 22, BAR = 5;
+    const plotW = W - L - R, plotH = H - T - B - BAR - 2;
+    const x = (t) => L + ((t - start) / (end - start)) * plotW;
+
+    const vals = segs.flatMap((s) => [s.cur, s.tgt]).filter((v) => v !== null);
+    let lo = vals.length ? Math.floor(Math.min(...vals) - 0.5) : 15;
+    let hi = vals.length ? Math.ceil(Math.max(...vals) + 0.5) : 25;
+    if (hi - lo < 2) hi = lo + 2;
+    const yStep = [0.5, 1, 2, 5, 10].find((st) => (hi - lo) / st <= 6) || 10;
+    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * plotH;
+
+    // grid + axes
+    let grid = "";
+    for (let v = Math.ceil(lo / yStep) * yStep; v <= hi + 1e-9; v += yStep) {
+      grid += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`;
+      grid += `<text class="axis" x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${+v.toFixed(1)}°</text>`;
+    }
+    const tickH = this._hours <= 6 ? 1 : this._hours <= 24 ? 3 : 24;
+    const first = new Date(start);
+    first.setMinutes(0, 0, 0);
+    first.setHours(tickH === 24 ? 0 : Math.ceil(first.getHours() / tickH) * tickH);
+    let xTicks = "";
+    for (let d = new Date(first); d.getTime() <= end; d.setHours(d.getHours() + tickH)) {
+      if (d.getTime() < start) continue;
+      const label = tickH === 24 ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}` : `${pad2(d.getHours())}:00`;
+      xTicks += `<line x1="${x(d)}" x2="${x(d)}" y1="${T}" y2="${T + plotH}"/>`;
+      xTicks += `<text class="axis" x="${x(d)}" y="${H - 6}" text-anchor="middle">${label}</text>`;
+    }
+
+    // heating: merged intervals
+    const heat = [];
+    for (const s of segs) {
+      if (!s.heat) continue;
+      const last = heat[heat.length - 1];
+      if (last && last[1] >= s.t) last[1] = s.t2;
+      else heat.push([s.t, s.t2]);
+    }
+    const heatRects = heat
+      .map(([a, b]) => {
+        const w = Math.max(1, x(b) - x(a));
+        return `<rect class="heat-bg" x="${x(a)}" y="${T}" width="${w}" height="${plotH}"/>
+                <rect class="heat-bar" x="${x(a)}" y="${T + plotH + 2}" width="${w}" height="${BAR}" rx="1"/>`;
+      })
+      .join("");
+
+    // current: polyline through recorded values; target: step line
+    const path = (key, step) => {
+      let d = "", open = false;
+      for (const s of segs) {
+        if (s[key] === null) { open = false; continue; }
+        const cmd = open ? "L" : "M";
+        d += `${cmd}${x(s.t).toFixed(1)},${y(s[key]).toFixed(1)}`;
+        if (step) d += `L${x(s.t2).toFixed(1)},${y(s[key]).toFixed(1)}`;
+        open = true;
+      }
+      const lastSeg = segs[segs.length - 1];
+      if (!step && open) d += `L${x(end).toFixed(1)},${y(lastSeg[key]).toFixed(1)}`;
+      return d;
+    };
+
+    chart.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+        <g class="grid">${grid}${xTicks}</g>
+        ${heatRects}
+        <path class="tgt" d="${path("tgt", true)}"/>
+        <path class="cur" d="${path("cur", false)}"/>
+        <line class="cursor" y1="${T}" y2="${T + plotH}" visibility="hidden"/>
+      </svg>
+      <div class="tip" hidden></div>`;
+
+    const svg = chart.querySelector("svg");
+    const cursor = chart.querySelector(".cursor");
+    const tip = chart.querySelector(".tip");
+    svg.addEventListener("pointermove", (e) => {
+      const rect = svg.getBoundingClientRect();
+      const px = ((e.clientX - rect.left) / rect.width) * W;
+      if (px < L || px > W - R) return;
+      const t = start + ((px - L) / plotW) * (end - start);
+      const seg = segs.findLast((s) => s.t <= t) || segs[0];
+      const d = new Date(t);
+      cursor.setAttribute("x1", px);
+      cursor.setAttribute("x2", px);
+      cursor.setAttribute("visibility", "visible");
+      tip.hidden = false;
+      tip.innerHTML = `
+        <div class="muted">${this._hours > 24 ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)} ` : ""}${pad2(d.getHours())}:${pad2(d.getMinutes())}</div>
+        <div>Current: <b>${fmt(seg.cur)}°</b></div>
+        <div>Target: <b>${fmt(seg.tgt)}°</b></div>
+        <div>${seg.heat ? "Heating" : "Idle"}</div>`;
+      const left = (px / W) * rect.width;
+      tip.style.left = left > rect.width / 2 ? "" : `${left + 10}px`;
+      tip.style.right = left > rect.width / 2 ? `${rect.width - left + 10}px` : "";
+    });
+    svg.addEventListener("pointerleave", () => {
+      cursor.setAttribute("visibility", "hidden");
+      tip.hidden = true;
+    });
+  }
+}
+
 /* ============================================================ register == */
 
 const define = (name, cls) => customElements.get(name) || customElements.define(name, cls);
@@ -839,6 +1104,7 @@ define("poer-thermostat-card", PoerThermostatCard);
 define("poer-thermostat-card-editor", PoerThermostatCardEditor);
 define("poer-overview-card", PoerOverviewCard);
 define("poer-overview-card-editor", PoerOverviewCardEditor);
+define("poer-history-dialog", PoerHistoryDialog);
 
 window.customCards = window.customCards || [];
 window.customCards.push(

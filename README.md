@@ -54,6 +54,10 @@ The integration ships two dashboard cards. They are loaded automatically: no nee
 
 Both cards have a visual editor (*Edit dashboard → Add card → POER Overview / POER Thermostat*), or can be configured in YAML.
 
+**Heating history:** tap the flame icon on either card to open a chart of the last 24 hours (switchable to 6 h / 7 days)
+with the current temperature, the target temperature and the periods when the zone was heating, plus total heating time.
+It uses the Home Assistant recorder history of the `climate` entity, so nothing extra needs to be set up.
+
 ### POER Overview — `custom:poer-overview-card`
 
 Grid of thermostat tiles: current temperature, target, status (Auto / Heat / Off / Away / Offline) and humidity.
