@@ -8,8 +8,7 @@
  *   status_icon: mdi:fire                  – optional, shown while heating
  *   status_icon_size: 32                   – optional, px
  *   controls: vertical                     – vertical (chevrons) | horizontal (− +)
- *   show_modes: true                       – Auto / Heat / Off buttons
- *   show_presets: true                     – Home / Away buttons
+ *   show_modes: true                       – Home / Away / Off buttons
  *
  *   type: custom:poer-overview-card        – grid of zones
  *   title: Heating                         – optional, no title when empty
@@ -24,10 +23,11 @@
  *     - climate.office                     – no group
  */
 
-const VERSION = "1.0.1-dev-4";
+const VERSION = "1.0.1-dev-5";
 
-const MODE_LABELS = { auto: "Auto", heat: "Heat", off: "Off" };
-const PRESET_LABELS = { home: "Home", away: "Away" };
+// hvac modes of the POER climate entity (see integration translations)
+const MODE_LABELS = { auto: "Home", heat: "Away", off: "Off" };
+const MODE_CLASS = { auto: "home", heat: "away", off: "off" };
 const SET_TEMP_DELAY_MS = 800;
 
 const THERMOSTAT_DEFAULTS = {
@@ -37,7 +37,6 @@ const THERMOSTAT_DEFAULTS = {
   status_icon_size: 32,
   controls: "vertical",
   show_modes: true,
-  show_presets: true,
 };
 const OVERVIEW_DEFAULTS = { columns: 3, background: true, show_heating_count: true };
 
@@ -58,7 +57,6 @@ function zoneInfo(st) {
     humidity: a.current_humidity,
     heating: !unavailable && a.hvac_action === "heating",
     mode: st.state,
-    preset: a.preset_mode,
     unavailable,
   };
 }
@@ -66,8 +64,7 @@ function zoneInfo(st) {
 // Offline / Away / Auto / Heat / Off, plus css class for the badge colour
 function statusOf(z) {
   if (z.unavailable) return { label: "Offline", cls: "offline" };
-  if (z.preset === "away") return { label: "Away", cls: "away" };
-  return { label: MODE_LABELS[z.mode] || z.mode, cls: z.mode };
+  return { label: MODE_LABELS[z.mode] || z.mode, cls: MODE_CLASS[z.mode] || z.mode };
 }
 
 function moreInfo(el, entityId) {
@@ -108,7 +105,6 @@ async function loadHaForm() {
 const BASE_STYLE = `
   :host {
     --poer-heat: var(--state-climate-heat-color, #ff8100);
-    --poer-auto: var(--state-climate-auto-color, #008000);
     --poer-off: var(--state-climate-off-color, #8a8a8a);
     --poer-away: var(--success-color, #43a047);
     --poer-muted: var(--secondary-text-color);
@@ -123,8 +119,7 @@ const BASE_STYLE = `
     padding: 2px 6px; border-radius: 10px;
     color: var(--poer-off); border: 1px solid currentColor; background: none;
   }
-  .badge.heat { color: var(--poer-heat); }
-  .badge.auto { color: var(--poer-auto); }
+  .badge.home { color: var(--primary-color, #03a9f4); }
   .badge.away { color: var(--poer-away); }
   .badge.offline { color: var(--disabled-text-color, #bdbdbd); }
   /* icon + value on one line, icon centred on the text */
@@ -160,7 +155,7 @@ class PoerThermostatCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 2 + (this._config.show_modes ? 1 : 0) + (this._config.show_presets ? 1 : 0);
+    return 2 + (this._config.show_modes ? 1 : 0);
   }
 
   static getConfigElement() {
@@ -183,7 +178,6 @@ class PoerThermostatCard extends HTMLElement {
     if (action === "history") return PoerHistoryDialog.open(this._hass, entity_id, this._config.name || zoneInfo(st).name);
     if (isUnavailable(st)) return;
     if (action === "mode") this._hass.callService("climate", "set_hvac_mode", { entity_id, hvac_mode: value });
-    else if (action === "preset") this._hass.callService("climate", "set_preset_mode", { entity_id, preset_mode: value });
     else if (action === "step") this._stepTarget(st, Number(value));
   }
 
@@ -244,18 +238,11 @@ class PoerThermostatCard extends HTMLElement {
     const status = statusOf(z);
     const target = this._pendingTarget ?? z.target;
     const modes = st.attributes.hvac_modes || Object.keys(MODE_LABELS);
-    const presets = st.attributes.preset_modes || Object.keys(PRESET_LABELS);
 
     const modeBtns = modes
       .map(
-        (m) => `<button class="seg ${m} ${!z.unavailable && z.mode === m && z.preset !== "away" ? "on" : ""}"
+        (m) => `<button class="seg ${MODE_CLASS[m] || esc(m)} ${!z.unavailable && z.mode === m ? "on" : ""}"
                   data-action="mode" data-value="${esc(m)}">${esc(MODE_LABELS[m] || m)}</button>`
-      )
-      .join("");
-    const presetBtns = presets
-      .map(
-        (p) => `<button class="seg ${esc(p)} ${!z.unavailable && z.preset === p ? "on" : ""}"
-                  data-action="preset" data-value="${esc(p)}">${esc(PRESET_LABELS[p] || p)}</button>`
       )
       .join("");
 
@@ -310,8 +297,6 @@ class PoerThermostatCard extends HTMLElement {
           background: var(--secondary-background-color);
         }
         .seg.on { color: #fff; background: var(--poer-off); }
-        .seg.on.heat { background: var(--poer-heat); }
-        .seg.on.auto { background: var(--poer-auto); }
         .seg.on.away { background: var(--poer-away); }
         .seg.on.home { background: var(--primary-color); }
         button:disabled { cursor: default; opacity: .5; }
@@ -338,7 +323,6 @@ class PoerThermostatCard extends HTMLElement {
         </div>
 
         ${c.show_modes ? `<div class="row">${modeBtns}</div>` : ""}
-        ${c.show_presets ? `<div class="row">${presetBtns}</div>` : ""}
       </ha-card>`;
   }
 }
@@ -400,14 +384,7 @@ const THERMOSTAT_SCHEMA = [
       },
     },
   },
-  {
-    type: "grid",
-    name: "",
-    schema: [
-      { name: "show_modes", selector: { boolean: {} } },
-      { name: "show_presets", selector: { boolean: {} } },
-    ],
-  },
+  { name: "show_modes", selector: { boolean: {} } },
 ];
 
 const THERMOSTAT_LABELS = {
@@ -418,8 +395,7 @@ const THERMOSTAT_LABELS = {
   status_icon: "Heating icon",
   status_icon_size: "Heating icon size",
   controls: "Target buttons layout",
-  show_modes: "Show mode buttons (Auto / Heat / Off)",
-  show_presets: "Show preset buttons (Home / Away)",
+  show_modes: "Show mode buttons (Home / Away / Off)",
 };
 
 /* ============================================================== overview == */

@@ -6,15 +6,9 @@ import logging
 from typing import Any
 
 from homeassistant.components.climate import (
-    ATTR_PRESET_MODE,
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
     ATTR_TEMPERATURE,
-    PRESET_AWAY,
-    PRESET_ECO,
-    PRESET_HOME,
-    PRESET_NONE,
-    PRESET_SLEEP,
     ClimateEntity,
     ClimateEntityFeature,
     HVACAction,
@@ -54,28 +48,25 @@ class POERThermostat(POEREntity, ClimateEntity):
 
     # 使用设备名称作为实体名称
     _attr_name = None
+    # translations: auto = Home, heat = Away, off = Off
+    _attr_translation_key = "thermostat"
     _attr_min_temp = DEFAULT_MIN_TEMP
     _attr_max_temp = DEFAULT_MAX_TEMP
     _attr_target_temperature_step = DEFAULT_TEMP_STEP
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # Home (POER auto) / Away (POER eco) / Off, see const.HA_TO_POER_MODE
     _attr_hvac_modes = [
         HVACMode.AUTO,
         #  HVACMode.COOL,
         HVACMode.HEAT,
         HVACMode.OFF,
     ]
-    _attr_preset_modes = [
-        # PRESET_NONE,
-        PRESET_HOME,
-        PRESET_AWAY,
-        # PRESET_SLEEP,
-        # PRESET_ECO,
-    ]
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         # | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-        | ClimateEntityFeature.PRESET_MODE
+        | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.TURN_OFF
     )
 
     def __init__(self, coordinator: DeviceCoordinator, device_id: str) -> None:
@@ -105,14 +96,7 @@ class POERThermostat(POEREntity, ClimateEntity):
 
         # 状态映射
         self._attr_hvac_mode = self._map_hvac_mode(data.get("mode"))
-        self._attr_preset_mode = self._map_preset_mode(data.get("preset"))
         self._attr_hvac_action = self._map_hvac_action(data.get("action"))
-        # mode = data.get("mode")
-        # if mode is not None:
-        #     self._attr_hvac_mode = self._map_hvac_mode(mode)
-        # preset = data.get("preset")
-        # if preset is not None:
-        #     self._attr_preset_mode = self._map_preset_mode(preset)
 
     def _map_hvac_mode(self, mode: str | None) -> HVACMode | None:
         """Map HVAC mode from device value."""
@@ -132,17 +116,6 @@ class POERThermostat(POEREntity, ClimateEntity):
             "idle": HVACAction.IDLE,
         }
         return action_map.get(action, HVACAction.IDLE)
-
-    def _map_preset_mode(self, preset: str | None) -> str | None:
-        """Map preset mode from device value."""
-        preset_map = {
-            "home": PRESET_HOME,
-            "away": PRESET_AWAY,
-            # "sleep": PRESET_SLEEP,
-            # "eco": PRESET_ECO,
-            # "none": PRESET_NONE,
-        }
-        return preset_map.get(preset)
 
     async def async_set_temperature(self, **kwargs) -> None:
         """Set target temperature."""
@@ -189,47 +162,13 @@ class POERThermostat(POEREntity, ClimateEntity):
             _LOGGER.error("Unsupported mode: %s", hvac_mode)
             return
 
-        # 乐观更新 (选择模式会退出 away/eco)
-        self._attr_hvac_mode = hvac_mode
-        self._attr_preset_mode = PRESET_HOME
-        self.async_write_ha_state()
-
-        # 发送命令
-        success = await self.coordinator.send_command(
-            self.device_id,
-            "set_mode",
-            {"mode": device_mode, "preset": "home"},
-        )
-
-        if not success:
-            self._update_attributes()  # 失败时恢复之前状态
-            self.async_write_ha_state()
-
-        await self.coordinator.async_request_refresh()
-
-    async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set preset mode."""
-        preset_map = {
-            PRESET_HOME: "home",
-            PRESET_AWAY: "away",
-            # PRESET_SLEEP: "sleep",
-            # PRESET_ECO: "eco",
-            # PRESET_NONE: "none",
-        }
-
-        if (device_preset := preset_map.get(preset_mode)) is None:
-            _LOGGER.error("Unsupported preset: %s", preset_mode)
-            return
-
         # 乐观更新
-        self._attr_preset_mode = preset_mode
+        self._attr_hvac_mode = hvac_mode
         self.async_write_ha_state()
 
         # 发送命令
         success = await self.coordinator.send_command(
-            self.device_id,
-            "set_mode",
-            {"mode": self._attr_hvac_mode or "heat", "preset": device_preset},
+            self.device_id, "set_mode", {"mode": device_mode}
         )
 
         if not success:
@@ -237,3 +176,11 @@ class POERThermostat(POEREntity, ClimateEntity):
             self.async_write_ha_state()
 
         await self.coordinator.async_request_refresh()
+
+    async def async_turn_on(self) -> None:
+        """Turn on: back to Home."""
+        await self.async_set_hvac_mode(HVACMode.AUTO)
+
+    async def async_turn_off(self) -> None:
+        """Turn off."""
+        await self.async_set_hvac_mode(HVACMode.OFF)

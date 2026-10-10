@@ -46,6 +46,19 @@ Use the following steps to generate:
 
 - If you no longer want to use Home Assistant related functions, please click the Release button.
 
+## Modes
+
+Each thermostat is a `climate` entity with three modes, matching the POER app:
+
+| Shown in HA | `hvac_mode` (automations / services) | POER mode |
+|---|---|---|
+| **Home** | `auto` | `auto` (schedule). A thermostat in manual mode (`heat`) is also shown as Home. |
+| **Away** | `heat` | `eco` |
+| **Off** | `off` | `off` |
+
+Use `climate.set_hvac_mode` with these values in automations, e.g. `hvac_mode: heat` to switch to Away.
+`climate.turn_on` switches to Home. There are no presets.
+
 ## Lovelace cards
 
 The integration ships two dashboard cards. They are loaded automatically: no need to add a resource in
@@ -60,7 +73,7 @@ It uses the Home Assistant recorder history of the `climate` entity, so nothing 
 
 ### POER Overview — `custom:poer-overview-card`
 
-Grid of thermostat tiles: current temperature, target, status (Auto / Heat / Off / Away / Offline) and humidity.
+Grid of thermostat tiles: current temperature, target, status (Home / Away / Off / Offline) and humidity.
 Zones that are heating get an orange stripe. Tap a tile to open its details.
 
 ```yaml
@@ -105,7 +118,7 @@ Untick a thermostat to hide it.
 
 ### POER Thermostat — `custom:poer-thermostat-card`
 
-One zone: current temperature, humidity, status, target with up/down controls, mode and preset buttons.
+One zone: current temperature, humidity, status, target with up/down controls and Home / Away / Off buttons.
 The card is highlighted while the zone is heating. Tap the header to open the details.
 
 ```yaml
@@ -118,7 +131,6 @@ status_icon: mdi:fire
 status_icon_size: 32
 controls: vertical
 show_modes: true
-show_presets: true
 ```
 
 | Option | Type | Required | Default | Values / description |
@@ -131,8 +143,7 @@ show_presets: true
 | `status_icon` | string | no | `mdi:fire` | Icon that lights up while heating |
 | `status_icon_size` | number | no | `32` | Heating icon size in px, `16`–`96` |
 | `controls` | string | no | `vertical` | `vertical`: chevrons above and below the target. `horizontal`: − and + to the left and right. |
-| `show_modes` | boolean | no | `true` | Show the Auto / Heat / Off buttons |
-| `show_presets` | boolean | no | `true` | Show the Home / Away buttons |
+| `show_modes` | boolean | no | `true` | Show the Home / Away / Off buttons |
 
 
 ### Config

@@ -13,7 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 
-from .const import _LOGGER
+from .const import _LOGGER, HA_TO_POER_MODE, POER_TO_HA_MODE
 
 
 SCAN_INTERVAL = timedelta(seconds=30)
@@ -120,18 +120,10 @@ class DeviceCoordinator(DataUpdateCoordinator):
                 "maxThresholdCelsius"
             ],
             "mode": None,
-            "preset": None,
         }
         poerMode = status.get("thermostatMode")
-        # poer: mode(preset): auto(home) heat/man(home) off(off) eco(away)
-        # ha: mode(preset): auto(home) heat/man(home) off(home) (away)
-        if poerMode in ("auto", "heat", "off"):
-            device_info["preset"] = "home"
-            device_info["mode"] = poerMode
-        elif poerMode == "eco":
-            device_info["preset"] = "away"
-            device_info["mode"] = "heat"
-        else:
+        device_info["mode"] = POER_TO_HA_MODE.get(poerMode)
+        if device_info["mode"] is None:
             _LOGGER.warning(
                 "Unknown thermostat mode for device %s: %s", device_id, poerMode
             )
@@ -175,10 +167,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
                 }
             ]
         elif endpoint == "set_mode":
-            mode = data["mode"]
-            preset = data["preset"]
-            if preset == "away":
-                mode = "eco"
+            mode = HA_TO_POER_MODE[data["mode"]]
             execution = [
                 {
                     "command": "action.devices.commands.ThermostatSetMode",
