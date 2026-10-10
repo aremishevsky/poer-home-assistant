@@ -135,6 +135,18 @@ class DeviceCoordinator(DataUpdateCoordinator):
             _LOGGER.warning(
                 "Unknown thermostat mode for device %s: %s", device_id, poerMode
             )
+
+        # 云端对离线设备仍返回 online=true 和最后缓存的数据,
+        # 出现不可能的状态(关机却在加热 / 设定温度超出范围)时视为离线
+        target = device_info["target_temp"]
+        if device_info["online"] and (
+            (poerMode == "off" and device_info["action"] == "heating")
+            or (target is not None and target > device_info["max_temp"])
+        ):
+            _LOGGER.debug(
+                "Device %s reports impossible state, treating as offline", device_id
+            )
+            device_info["online"] = False
         return device_info
 
     async def send_command(self, device_id: str, endpoint: str, data: dict) -> bool:
