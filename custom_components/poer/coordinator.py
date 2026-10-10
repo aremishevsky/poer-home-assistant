@@ -107,6 +107,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
             "name": device["name"]["name"],
             "model": device["deviceInfo"]["model"],
             "firmware": device["deviceInfo"]["swVersion"],
+            "hw_version": device["deviceInfo"].get("hwVersion"),
+            "online": status.get("online"),
             "current_temp": status.get("thermostatTemperatureAmbient"),
             "current_humidity": status.get("thermostatHumidityAmbient"),
             "target_temp": status.get("thermostatTemperatureSetpoint"),

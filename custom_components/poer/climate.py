@@ -23,14 +23,12 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PRECISION_TENTHS, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import _LOGGER, DOMAIN
+from .const import _LOGGER
 from .coordinator import DeviceCoordinator
+from .entity import POEREntity
 
-DEFAULT_NAME = "POER Thermostat"
 DEFAULT_MIN_TEMP = 5.0
 DEFAULT_MAX_TEMP = 35.0
 DEFAULT_TEMP_STEP = 0.1
@@ -40,19 +38,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up climate platform."""
-    # 从配置流获取API凭据
-    api_token = entry.data.get("api_token")
-    api_url = entry.data.get("api_url")
-
-    if not api_token or not api_url:
-        _LOGGER.error("API credentials missing from config entry")
-        return
-
-    # 创建协调器实例
-    coordinator = DeviceCoordinator(hass, api_url, api_token)
-
-    # 初始数据刷新
-    await coordinator.async_config_entry_first_refresh()
+    coordinator: DeviceCoordinator = entry.runtime_data
 
     # 为每个设备创建实体
     entities = [
@@ -63,10 +49,11 @@ async def async_setup_entry(
         async_add_entities(entities)
 
 
-class POERThermostat(CoordinatorEntity, ClimateEntity):
+class POERThermostat(POEREntity, ClimateEntity):
     """POER Thermostat entity."""
 
-    _attr_has_entity_name = True
+    # 使用设备名称作为实体名称
+    _attr_name = None
     _attr_min_temp = DEFAULT_MIN_TEMP
     _attr_max_temp = DEFAULT_MAX_TEMP
     _attr_target_temperature_step = DEFAULT_TEMP_STEP
@@ -93,27 +80,9 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
 
     def __init__(self, coordinator: DeviceCoordinator, device_id: str) -> None:
         """Initialize thermostat."""
-        super().__init__(coordinator)
-        self.device_id = device_id
+        super().__init__(coordinator, device_id)
         self._attr_unique_id = f"poer_thermostat_{device_id}"
         self._update_attributes()
-
-    @property
-    def device_data(self) -> dict:
-        """Get current device data."""
-        return next(
-            (
-                device
-                for device in self.coordinator.data
-                if device["device_id"] == self.device_id
-            ),
-            {},
-        )
-
-    @property
-    def available(self) -> bool:
-        """Return True if the device was present in the last update."""
-        return super().available and bool(self.device_data)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -126,19 +95,13 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
         data = self.device_data
 
         # 基本属性
-        self._attr_name = data.get("name", DEFAULT_NAME)
         self._attr_current_temperature = data.get("current_temp")
         self._attr_current_humidity = data.get("current_humidity")
         self._attr_target_temperature = data.get("target_temp")
-        self._attr_min_temp = data.get("min_temp")
-        self._attr_max_temp = data.get("max_temp")
+        self._attr_min_temp = data.get("min_temp", DEFAULT_MIN_TEMP)
+        self._attr_max_temp = data.get("max_temp", DEFAULT_MAX_TEMP)
         # self._attr_target_temperature_low = data.get("temp_low")
         # self._attr_target_temperature_high = data.get("temp_high")
-
-        # 设备信息
-        self._attr_model = data.get("model", "Unknown Model")
-        self._attr_manufacturer = "POER Inc"
-        self._attr_firmware_version = data.get("firmware", "Unknown")
 
         # 状态映射
         self._attr_hvac_mode = self._map_hvac_mode(data.get("mode"))
@@ -180,18 +143,6 @@ class POERThermostat(CoordinatorEntity, ClimateEntity):
             # "none": PRESET_NONE,
         }
         return preset_map.get(preset)
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device info for device registry."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.device_id)},
-            name=self.name,
-            manufacturer=self._attr_manufacturer,
-            model=self._attr_model,
-            sw_version=self._attr_firmware_version,
-            # via_device=(DOMAIN, "cloud_bridge"),
-        )
 
     async def async_set_temperature(self, **kwargs) -> None:
         """Set target temperature."""
