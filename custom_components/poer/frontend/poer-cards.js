@@ -16,6 +16,8 @@
  *   columns: 3                             – optional, tiles per row
  *   background: true                       – false = transparent, no padding
  *   show_heating_count: true               – "Heating: N" in the header
+ *   mobile_columns: 2                      – tiles per row on screens up to 600px
+ *   mobile_show_groups: true               – group titles on screens up to 600px
  *   groups: [1st floor, 2nd floor]         – optional, group order
  *   entities:                              – optional, defaults to all POER thermostats
  *     - entity: climate.kabinet
@@ -23,7 +25,7 @@
  *     - climate.office                     – no group
  */
 
-const VERSION = "1.0.1-dev-5";
+const VERSION = "1.0.1-dev-6";
 
 // hvac modes of the POER climate entity (see integration translations)
 const MODE_LABELS = { auto: "Home", heat: "Away", off: "Off" };
@@ -38,7 +40,14 @@ const THERMOSTAT_DEFAULTS = {
   controls: "vertical",
   show_modes: true,
 };
-const OVERVIEW_DEFAULTS = { columns: 3, background: true, show_heating_count: true };
+const OVERVIEW_DEFAULTS = {
+  columns: 3,
+  background: true,
+  show_heating_count: true,
+  mobile_columns: 2,
+  mobile_show_groups: true,
+};
+const MOBILE_MAX_WIDTH = 600;
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -122,6 +131,9 @@ const BASE_STYLE = `
   .badge.home { color: var(--primary-color, #03a9f4); }
   .badge.away { color: var(--poer-away); }
   .badge.offline { color: var(--disabled-text-color, #bdbdbd); }
+  /* while heating the mode badge takes the colour of the stripe and the flame */
+  .heating .badge:not(.offline) { color: var(--poer-heat); }
+  .badge { white-space: nowrap; }
   /* icon + value on one line, icon centred on the text */
   .hum { display: inline-flex; align-items: center; gap: 1px; white-space: nowrap; }
   .hum ha-icon { display: inline-flex; }
@@ -260,7 +272,7 @@ class PoerThermostatCard extends HTMLElement {
         .head .flame { --mdc-icon-size: ${Number(c.status_icon_size) || 32}px; }
         .history { cursor: pointer; }
         .head .name { font-size: 18px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        ha-card { container-type: inline-size; }
+        ha-card { container-type: inline-size; overflow: hidden; }
         .main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 14px 0 10px; }
         .current { font-size: 48px; font-weight: 300; line-height: 1; white-space: nowrap; }
         .current small { font-size: 18px; vertical-align: top; margin-left: 2px; }
@@ -512,15 +524,19 @@ class PoerOverviewCard extends HTMLElement {
         .header .title-icon { --mdc-icon-size: 24px; color: var(--state-icon-color, var(--paper-item-icon-color)); }
         .group { font-size: 13px; font-weight: 500; color: var(--poer-muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 8px; }
         .group.first { margin-top: 0; }
-        .grid { display: grid; grid-template-columns: repeat(${Number(this._config.columns) || 3}, minmax(0, 1fr)); gap: 8px; }
+        .grid { display: grid; grid-template-columns: repeat(${Number(c.columns) || 3}, minmax(0, 1fr)); gap: 8px; }
         .tile {
-          padding: 10px 12px; border-radius: 12px; cursor: pointer;
-          background: var(--secondary-background-color);
+          --tile-bg: var(--secondary-background-color);
+          padding: 10px 12px; border-radius: 12px; cursor: pointer; overflow: hidden; min-width: 0;
+          background: var(--tile-bg);
           box-shadow: inset 3px 0 0 transparent;
         }
-        .tile.heating { box-shadow: inset 3px 0 0 var(--poer-heat); }
+        .tile.heating {
+          box-shadow: inset 3px 0 0 var(--poer-heat);
+          background: linear-gradient(90deg, color-mix(in srgb, var(--poer-heat) 10%, transparent), transparent 55%), var(--tile-bg);
+        }
         .no-bg .tile {
-          background: var(--ha-card-background, var(--card-background-color, #fff));
+          --tile-bg: var(--ha-card-background, var(--card-background-color, #fff));
           border-radius: var(--ha-card-border-radius, 12px);
           border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
           box-shadow: var(--ha-card-box-shadow, none);
@@ -530,13 +546,17 @@ class PoerOverviewCard extends HTMLElement {
         .top ha-icon { --mdc-icon-size: 18px; }
         .top .flame { margin: -6px; padding: 6px; } /* bigger tap target */
         .name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .temps { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin: 4px 0; }
+        .temps { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 6px; margin: 4px 0; }
         .temp { font-size: 26px; font-weight: 300; }
         .temp small { font-size: 14px; vertical-align: top; }
         .target { font-size: 13px; white-space: nowrap; }
-        .bottom { display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: 12px; }
+        .bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; font-size: 12px; }
         .bottom ha-icon { --mdc-icon-size: 14px; }
         .empty { padding: 8px 0; }
+        @media (max-width: ${MOBILE_MAX_WIDTH}px) {
+          .grid { grid-template-columns: repeat(${Number(c.mobile_columns) || 2}, minmax(0, 1fr)); }
+          ${c.mobile_show_groups === false ? ".group { display: none; } .grid + .group + .grid { margin-top: 8px; }" : ""}
+        }
       </style>
       <ha-card class="${c.background === false ? "no-bg" : ""}">
         ${header}
@@ -814,6 +834,16 @@ const OVERVIEW_SCHEMA = [
       { name: "show_heating_count", selector: { boolean: {} } },
     ],
   },
+  {
+    type: "expandable",
+    name: "mobile",
+    title: `Mobile (screens up to ${MOBILE_MAX_WIDTH}px)`,
+    flatten: true,
+    schema: [
+      { name: "mobile_columns", selector: { number: { min: 1, max: 8, mode: "box" } } },
+      { name: "mobile_show_groups", selector: { boolean: {} } },
+    ],
+  },
 ];
 
 const OVERVIEW_LABELS = {
@@ -822,11 +852,30 @@ const OVERVIEW_LABELS = {
   columns: "Tiles per row",
   background: "Card background",
   show_heating_count: "Show \"Heating: N\"",
+  mobile_columns: "Tiles per row",
+  mobile_show_groups: "Show group titles",
 };
 
 /* =============================================================== history == */
 
-const HISTORY_RANGES = [6, 24, 168];
+const MINUTE = 60e3;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+const HISTORY_RANGES = [
+  { key: "1h", ms: HOUR, text: "hour" },
+  { key: "3h", ms: 3 * HOUR, text: "3 hours" },
+  { key: "6h", ms: 6 * HOUR, text: "6 hours" },
+  { key: "12h", ms: 12 * HOUR, text: "12 hours" },
+  { key: "1d", ms: DAY, text: "day" },
+  { key: "1w", ms: 7 * DAY, text: "week" },
+  { key: "2w", ms: 14 * DAY, text: "2 weeks" },
+  { key: "1M", ms: 30 * DAY, text: "month" },
+];
+const DEFAULT_RANGE = "1d";
+
+// x axis: the smallest step that gives at most maxTicks labels
+const TICK_STEPS = [10, 15, 30, 60, 120, 180, 360, 720, 1440, 2880, 10080].map((m) => m * MINUTE);
 
 // climate history -> [{t, cur, tgt, heat}] (t in ms), one entry per recorded change
 function parseHistory(states, start) {
@@ -844,10 +893,90 @@ function parseHistory(states, start) {
 
 const fmtDuration = (ms) => {
   const m = Math.round(ms / 60000);
+  if (m >= 1440) return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`;
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 };
 
 const pad2 = (n) => String(n).padStart(2, "0");
+
+const fmtTime = (t, withDate) => {
+  const d = new Date(t);
+  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return withDate ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)} ${time}` : time;
+};
+
+// tick times in [a, b], aligned to local midnight
+function timeTicks(a, b, maxTicks) {
+  const step = TICK_STEPS.find((s) => (b - a) / s <= maxTicks) || TICK_STEPS[TICK_STEPS.length - 1];
+  const d = new Date(a);
+  d.setHours(0, 0, 0, 0);
+  const next = step < DAY ? () => d.setMinutes(d.getMinutes() + step / MINUTE) : () => d.setDate(d.getDate() + step / DAY);
+  while (d.getTime() < a) next();
+  const ticks = [];
+  for (; d.getTime() <= b; next()) ticks.push(d.getTime());
+  return { step, ticks };
+}
+
+// current temperature on n evenly spaced points in [a, b]: linear interpolation between the
+// recorded values, averaged over each bucket and then over k neighbouring buckets on each side
+function smoothCurrent(segs, a, b, n, k = 2) {
+  const SUB = 4;
+  const w = (b - a) / (n - 1);
+  const valueAt = (() => {
+    let i = 0;
+    return (t) => {
+      while (i + 1 < segs.length && segs[i + 1].t <= t) i++;
+      const s = segs[i];
+      if (!s || s.t > t || s.cur === null) return null;
+      const nx = segs[i + 1];
+      return nx && nx.cur !== null ? s.cur + ((nx.cur - s.cur) * (t - s.t)) / (nx.t - s.t) : s.cur;
+    };
+  })();
+
+  const buckets = [];
+  for (let j = 0; j < n; j++) {
+    let sum = 0, cnt = 0;
+    for (let q = 0; q < SUB; q++) {
+      const v = valueAt(Math.min(b, Math.max(a, a + j * w + ((q + 0.5) / SUB - 0.5) * w)));
+      if (v !== null) { sum += v; cnt++; }
+    }
+    buckets.push(cnt ? sum / cnt : null);
+  }
+  return buckets.map((v, j) => {
+    if (v === null) return { t: a + j * w, v };
+    let sum = 0, cnt = 0;
+    for (let q = Math.max(0, j - k); q <= Math.min(n - 1, j + k); q++) {
+      if (buckets[q] !== null) { sum += buckets[q]; cnt++; }
+    }
+    return { t: a + j * w, v: sum / cnt };
+  });
+}
+
+// smooth curve through [[x, y]] without overshooting (monotone cubic, like d3.curveMonotoneX)
+function monotonePath(pts) {
+  const n = pts.length;
+  if (!n) return "";
+  const f = (v) => v.toFixed(1);
+  let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+  if (n === 1) return d;
+  const h = [], s = [];
+  for (let i = 0; i < n - 1; i++) {
+    h.push(pts[i + 1][0] - pts[i][0]);
+    s.push((pts[i + 1][1] - pts[i][1]) / h[i]);
+  }
+  const m = pts.map((_, i) => {
+    if (i === 0) return s[0];
+    if (i === n - 1) return s[n - 2];
+    const s0 = s[i - 1], s1 = s[i];
+    const p = (s0 * h[i] + s1 * h[i - 1]) / (h[i - 1] + h[i]);
+    return (Math.sign(s0) + Math.sign(s1)) * Math.min(Math.abs(s0), Math.abs(s1), 0.5 * Math.abs(p));
+  });
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+    d += `C${f(x0 + h[i] / 3)},${f(y0 + (m[i] * h[i]) / 3)} ${f(x1 - h[i] / 3)},${f(y1 - (m[i + 1] * h[i]) / 3)} ${f(x1)},${f(y1)}`;
+  }
+  return d;
+}
 
 class PoerHistoryDialog extends HTMLElement {
   static open(hass, entityId, name) {
@@ -877,22 +1006,28 @@ class PoerHistoryDialog extends HTMLElement {
         }
         .top { display: flex; align-items: center; gap: 8px; }
         .top .ttl { flex: 1; min-width: 0; font-size: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .chips { display: flex; gap: 4px; }
+        .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
         button {
           font: inherit; font-size: 12px; border: none; border-radius: 12px; padding: 4px 10px; cursor: pointer;
           background: var(--secondary-background-color); color: var(--primary-text-color);
         }
         button.on { background: var(--primary-color); color: #fff; }
         button.x { font-size: 16px; padding: 2px 8px; background: none; }
-        .summary { margin: 8px 0 4px; font-size: 13px; }
+        .info { display: flex; align-items: center; gap: 8px; min-height: 24px; margin: 8px 0 4px; }
+        .summary { flex: 1; min-width: 0; font-size: 13px; }
         .summary b { color: var(--poer-heat); font-weight: 500; }
-        .chart { position: relative; height: 260px; margin-top: 4px; }
+        .chart {
+          position: relative; height: 260px; margin-top: 4px;
+          cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none;
+        }
+        .chart.dragging { cursor: grabbing; }
         .chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
-        .chart .msg { position: absolute; inset: 0; display: grid; place-items: center; }
+        .chart .msg { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+        .chart .msg[hidden] { display: none; }
         .axis { fill: var(--poer-muted); font-size: 10px; }
         .grid line { stroke: var(--divider-color, #e0e0e0); stroke-width: 1; }
-        .cur { fill: none; stroke: var(--primary-color, #03a9f4); stroke-width: 2; stroke-linejoin: round; }
-        .tgt { fill: none; stroke: var(--poer-heat); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .9; }
+        .cur { fill: none; stroke: var(--primary-color, #03a9f4); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; }
+        .tgt { fill: none; stroke: var(--poer-heat); stroke-width: 1.25; stroke-dasharray: 5 4; opacity: .9; }
         .heat-bg { fill: var(--poer-heat); opacity: .13; }
         .heat-bar { fill: var(--poer-heat); }
         .cursor { stroke: var(--poer-muted); stroke-width: 1; }
@@ -906,44 +1041,73 @@ class PoerHistoryDialog extends HTMLElement {
         .legend .l-cur { border-color: var(--primary-color, #03a9f4); }
         .legend .l-tgt { border-color: var(--poer-heat); border-top-style: dashed; }
         .legend .l-heat { height: 10px; border: none; background: var(--poer-heat); opacity: .35; border-radius: 2px; }
+        .legend .hint { margin-left: auto; }
       </style>
       <div class="backdrop">
         <div class="dlg" role="dialog" aria-label="Heating history">
           <div class="top">
             <span class="ttl">${esc(this._name)}</span>
-            <div class="chips">${HISTORY_RANGES.map((h) => `<button data-h="${h}">${h < 48 ? `${h}h` : `${h / 24}d`}</button>`).join("")}</div>
             <button class="x" title="Close">✕</button>
           </div>
-          <div class="summary muted">&nbsp;</div>
-          <div class="chart"><div class="msg muted">Loading…</div></div>
+          <div class="chips">${HISTORY_RANGES.map((r) => `<button data-range="${r.key}">${r.key}</button>`).join("")}</div>
+          <div class="info">
+            <span class="summary muted">&nbsp;</span>
+            <button class="now" data-now hidden title="Back to now">Now ⇥</button>
+          </div>
+          <div class="chart">
+            <svg></svg>
+            <div class="tip" hidden></div>
+            <div class="msg muted">Loading…</div>
+          </div>
           <div class="legend muted">
             <span><i class="l-cur"></i>Current</span>
             <span><i class="l-tgt"></i>Target</span>
             <span><i class="l-heat"></i>Heating</span>
+            <span class="hint">Drag the chart to move in time</span>
           </div>
         </div>
       </div>`;
     const root = this.shadowRoot;
     root.querySelector(".backdrop").addEventListener("click", (e) => {
-      if (e.target.classList.contains("backdrop") || e.target.closest(".x")) this.remove();
-      const chip = e.target.closest("[data-h]");
-      if (chip) this._load(Number(chip.dataset.h));
+      if (e.target.classList.contains("backdrop") || e.target.closest(".x")) return this.remove();
+      const chip = e.target.closest("[data-range]");
+      if (chip) this._setRange(chip.dataset.range);
+      if (e.target.closest("[data-now]")) this._setView(Date.now() - this._range.ms);
     });
-    this._load(24);
+    this._bindChart(root.querySelector(".chart"));
+    this._setRange(DEFAULT_RANGE);
   }
 
   disconnectedCallback() {
     document.removeEventListener("keydown", this._onKey);
   }
 
-  async _load(hours) {
-    this._hours = hours;
-    const root = this.shadowRoot;
-    root.querySelectorAll("[data-h]").forEach((b) => b.classList.toggle("on", Number(b.dataset.h) === hours));
-    root.querySelector(".chart").innerHTML = `<div class="msg muted">Loading…</div>`;
+  _setRange(key) {
+    this._range = HISTORY_RANGES.find((r) => r.key === key);
+    this.shadowRoot.querySelectorAll("[data-range]").forEach((b) => b.classList.toggle("on", b.dataset.range === key));
+    this._buf = null;
+    this._setView(Date.now() - this._range.ms);
+  }
 
-    const end = Date.now();
-    const start = end - hours * 3600e3;
+  // view = [start, start + range], never later than now; loads history when it is not in the buffer
+  _setView(start) {
+    const span = this._range.ms;
+    start = Math.min(start, Date.now() - span);
+    this._view = { start, end: start + span };
+    this._draw();
+    const buf = this._buf;
+    const covered = buf && buf.start <= start && (buf.end >= start + span || buf.end >= Date.now() - MINUTE);
+    if (!covered) this._load();
+  }
+
+  // one range of extra history on each side, so short drags need no request
+  async _load() {
+    const span = this._range.ms;
+    const start = this._view.start - span;
+    const end = Math.min(Date.now(), this._view.end + span);
+    const req = (this._req = (this._req || 0) + 1);
+    this._loading = true;
+    this._draw();
     try {
       const res = await this._hass.callWS({
         type: "history/history_during_period",
@@ -955,35 +1119,140 @@ class PoerHistoryDialog extends HTMLElement {
         minimal_response: false,
         no_attributes: false,
       });
-      if (this._hours !== hours) return; // another range was picked meanwhile
-      this._data = { points: parseHistory(res[this._entityId] || [], start), start, end };
-      this._draw();
+      if (req !== this._req) return; // another range / position was requested meanwhile
+      const points = parseHistory(res[this._entityId] || [], start);
+      // duration of each point = until the next one (or the end of the request)
+      const segs = points.map((p, i) => ({ ...p, t2: i + 1 < points.length ? points[i + 1].t : end }));
+      this._buf = { start, end, segs };
+      this._error = null;
     } catch (err) {
-      root.querySelector(".chart").innerHTML = `<div class="msg muted">Failed to load history: ${esc(err.message || err.code || err)}</div>`;
+      if (req !== this._req) return;
+      this._error = err.message || err.code || String(err);
     }
+    this._loading = false;
+    this._draw();
+  }
+
+  _bindChart(chart) {
+    const tip = chart.querySelector(".tip");
+    const svg = chart.querySelector("svg");
+    const DRAG_MIN_PX = 4;
+
+    const hideTip = () => {
+      tip.hidden = true;
+      svg.querySelector(".cursor")?.setAttribute("visibility", "hidden");
+    };
+    const showTip = (e) => {
+      const g = this._geo;
+      if (!g) return;
+      const rect = svg.getBoundingClientRect();
+      const px = ((e.clientX - rect.left) / rect.width) * g.W;
+      if (px < g.L || px > g.W - g.R) return hideTip();
+      const t = g.start + ((px - g.L) / g.plotW) * (g.end - g.start);
+      const seg = g.segs.findLast((s) => s.t <= t);
+      if (!seg) return hideTip();
+      const cursor = svg.querySelector(".cursor");
+      cursor.setAttribute("x1", px);
+      cursor.setAttribute("x2", px);
+      cursor.setAttribute("visibility", "visible");
+      tip.hidden = false;
+      tip.innerHTML = `
+        <div class="muted">${fmtTime(t, this._range.ms > DAY)}</div>
+        <div>Current: <b>${fmt(seg.cur)}°</b></div>
+        <div>Target: <b>${fmt(seg.tgt)}°</b></div>
+        <div>${seg.heat ? "Heating" : "Idle"}</div>`;
+      const left = (px / g.W) * rect.width;
+      tip.style.left = left > rect.width / 2 ? "" : `${left + 10}px`;
+      tip.style.right = left > rect.width / 2 ? `${rect.width - left + 10}px` : "";
+    };
+
+    chart.addEventListener("pointerdown", (e) => {
+      if (!this._geo || e.button > 0) return;
+      this._drag = { x: e.clientX, start: this._view.start, moved: false };
+      try {
+        chart.setPointerCapture(e.pointerId);
+      } catch (_) { /* pointer already released */ }
+      showTip(e);
+    });
+    chart.addEventListener("pointermove", (e) => {
+      const drag = this._drag;
+      if (!drag) return showTip(e);
+      const dx = e.clientX - drag.x;
+      if (!drag.moved && Math.abs(dx) < DRAG_MIN_PX) return;
+      drag.moved = true;
+      chart.classList.add("dragging");
+      hideTip();
+      const g = this._geo;
+      const pxPerMs = (g.plotW / (g.end - g.start)) * (svg.getBoundingClientRect().width / g.W);
+      const span = this._range.ms;
+      this._view = { start: Math.min(drag.start - dx / pxPerMs, Date.now() - span) };
+      this._view.end = this._view.start + span;
+      if (!this._frame) {
+        this._frame = requestAnimationFrame(() => {
+          this._frame = null;
+          this._draw();
+        });
+      }
+    });
+    const endDrag = (e) => {
+      const drag = this._drag;
+      if (!drag) return;
+      this._drag = null;
+      chart.classList.remove("dragging");
+      if (drag.moved) this._setView(this._view.start);
+      else if (e.pointerType !== "mouse") showTip(e); // tap shows the values
+    };
+    chart.addEventListener("pointerup", endDrag);
+    chart.addEventListener("pointercancel", (e) => {
+      endDrag(e);
+      hideTip();
+    });
+    chart.addEventListener("pointerleave", (e) => !this._drag && hideTip());
   }
 
   _draw() {
-    const { points, start, end } = this._data;
     const root = this.shadowRoot;
     const chart = root.querySelector(".chart");
+    const svg = chart.querySelector("svg");
+    const msg = chart.querySelector(".msg");
+    const summary = root.querySelector(".summary");
+    const { start, end } = this._view;
+    const atNow = end >= Date.now() - MINUTE;
+    root.querySelector("[data-now]").hidden = atNow;
 
-    // duration of each point = until the next one (or now)
-    const segs = points.map((p, i) => ({ ...p, t2: i + 1 < points.length ? points[i + 1].t : end }));
-    const heatMs = segs.filter((s) => s.heat).reduce((sum, s) => sum + (s.t2 - s.t), 0);
-    root.querySelector(".summary").innerHTML = points.length
-      ? `Heating <b>${fmtDuration(heatMs)}</b> (${Math.round((heatMs / (end - start)) * 100)}%) in the last ${this._hours < 48 ? `${this._hours} hours` : `${this._hours / 24} days`}`
-      : "&nbsp;";
-    if (!points.length) {
-      chart.innerHTML = `<div class="msg muted">No history for this period</div>`;
+    const period = atNow
+      ? `in the last ${this._range.text}`
+      : `${fmtTime(start, true)} – ${fmtTime(end, true)}`;
+
+    if (!this._buf) {
+      this._geo = null;
+      svg.innerHTML = "";
+      msg.hidden = false;
+      msg.textContent = this._error ? `Failed to load history: ${this._error}` : "Loading…";
+      summary.innerHTML = esc(period);
       return;
     }
+
+    const all = this._buf.segs;
+    const segs = all.filter((s) => s.t2 > start && s.t < end);
+    const clip = (s) => [Math.max(s.t, start), Math.min(s.t2, end)];
+
+    const heatMs = segs.filter((s) => s.heat).reduce((sum, s) => sum + clip(s)[1] - clip(s)[0], 0);
+    summary.innerHTML = segs.length
+      ? `Heating <b>${fmtDuration(heatMs)}</b> (${Math.round((heatMs / (end - start)) * 100)}%) ${esc(period)}`
+      : esc(period);
+    if (this._loading) summary.innerHTML += " · loading…";
+    else if (this._error) summary.innerHTML += ` · ${esc(this._error)}`;
+
+    msg.hidden = segs.length > 0;
+    msg.textContent = this._loading ? "Loading…" : "No history for this period";
 
     const W = chart.clientWidth || 700;
     const H = chart.clientHeight || 260;
     const L = 34, R = 8, T = 8, B = 22, BAR = 5;
     const plotW = W - L - R, plotH = H - T - B - BAR - 2;
     const x = (t) => L + ((t - start) / (end - start)) * plotW;
+    this._geo = { W, L, R, plotW, start, end, segs };
 
     const vals = segs.flatMap((s) => [s.cur, s.tgt]).filter((v) => v !== null);
     let lo = vals.length ? Math.floor(Math.min(...vals) - 0.5) : 15;
@@ -998,25 +1267,22 @@ class PoerHistoryDialog extends HTMLElement {
       grid += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`;
       grid += `<text class="axis" x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${+v.toFixed(1)}°</text>`;
     }
-    const tickH = this._hours <= 6 ? 1 : this._hours <= 24 ? 3 : 24;
-    const first = new Date(start);
-    first.setMinutes(0, 0, 0);
-    first.setHours(tickH === 24 ? 0 : Math.ceil(first.getHours() / tickH) * tickH);
-    let xTicks = "";
-    for (let d = new Date(first); d.getTime() <= end; d.setHours(d.getHours() + tickH)) {
-      if (d.getTime() < start) continue;
-      const label = tickH === 24 ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}` : `${pad2(d.getHours())}:00`;
-      xTicks += `<line x1="${x(d)}" x2="${x(d)}" y1="${T}" y2="${T + plotH}"/>`;
-      xTicks += `<text class="axis" x="${x(d)}" y="${H - 6}" text-anchor="middle">${label}</text>`;
+    const { step, ticks } = timeTicks(start, end, Math.max(2, Math.min(8, Math.floor(plotW / 70))));
+    for (const t of ticks) {
+      const d = new Date(t);
+      const label = step >= DAY ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}` : `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      grid += `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${T + plotH}"/>`;
+      grid += `<text class="axis" x="${x(t)}" y="${H - 6}" text-anchor="middle">${label}</text>`;
     }
 
     // heating: merged intervals
     const heat = [];
     for (const s of segs) {
       if (!s.heat) continue;
+      const [a, b] = clip(s);
       const last = heat[heat.length - 1];
-      if (last && last[1] >= s.t) last[1] = s.t2;
-      else heat.push([s.t, s.t2]);
+      if (last && last[1] >= a) last[1] = b;
+      else heat.push([a, b]);
     }
     const heatRects = heat
       .map(([a, b]) => {
@@ -1026,58 +1292,31 @@ class PoerHistoryDialog extends HTMLElement {
       })
       .join("");
 
-    // current: polyline through recorded values; target: step line
-    const path = (key, step) => {
-      let d = "", open = false;
-      for (const s of segs) {
-        if (s[key] === null) { open = false; continue; }
-        const cmd = open ? "L" : "M";
-        d += `${cmd}${x(s.t).toFixed(1)},${y(s[key]).toFixed(1)}`;
-        if (step) d += `L${x(s.t2).toFixed(1)},${y(s[key]).toFixed(1)}`;
-        open = true;
-      }
-      const lastSeg = segs[segs.length - 1];
-      if (!step && open) d += `L${x(end).toFixed(1)},${y(lastSeg[key]).toFixed(1)}`;
-      return d;
-    };
+    // target: step line
+    let tgt = "", open = false;
+    for (const s of segs) {
+      if (s.tgt === null) { open = false; continue; }
+      const [a, b] = clip(s);
+      tgt += `${open ? "L" : "M"}${x(a).toFixed(1)},${y(s.tgt).toFixed(1)}L${x(b).toFixed(1)},${y(s.tgt).toFixed(1)}`;
+      open = true;
+    }
 
-    chart.innerHTML = `
-      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-        <g class="grid">${grid}${xTicks}</g>
-        ${heatRects}
-        <path class="tgt" d="${path("tgt", true)}"/>
-        <path class="cur" d="${path("cur", false)}"/>
-        <line class="cursor" y1="${T}" y2="${T + plotH}" visibility="hidden"/>
-      </svg>
-      <div class="tip" hidden></div>`;
+    // current: smoothed curve, broken where the thermostat was unavailable
+    const n = Math.max(30, Math.min(240, Math.round(plotW / 3)));
+    let cur = "", run = [];
+    for (const p of [...smoothCurrent(all, start, end, n), { v: null }]) {
+      if (p.v !== null) { run.push([x(p.t), y(p.v)]); continue; }
+      cur += monotonePath(run);
+      run = [];
+    }
 
-    const svg = chart.querySelector("svg");
-    const cursor = chart.querySelector(".cursor");
-    const tip = chart.querySelector(".tip");
-    svg.addEventListener("pointermove", (e) => {
-      const rect = svg.getBoundingClientRect();
-      const px = ((e.clientX - rect.left) / rect.width) * W;
-      if (px < L || px > W - R) return;
-      const t = start + ((px - L) / plotW) * (end - start);
-      const seg = segs.findLast((s) => s.t <= t) || segs[0];
-      const d = new Date(t);
-      cursor.setAttribute("x1", px);
-      cursor.setAttribute("x2", px);
-      cursor.setAttribute("visibility", "visible");
-      tip.hidden = false;
-      tip.innerHTML = `
-        <div class="muted">${this._hours > 24 ? `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)} ` : ""}${pad2(d.getHours())}:${pad2(d.getMinutes())}</div>
-        <div>Current: <b>${fmt(seg.cur)}°</b></div>
-        <div>Target: <b>${fmt(seg.tgt)}°</b></div>
-        <div>${seg.heat ? "Heating" : "Idle"}</div>`;
-      const left = (px / W) * rect.width;
-      tip.style.left = left > rect.width / 2 ? "" : `${left + 10}px`;
-      tip.style.right = left > rect.width / 2 ? `${rect.width - left + 10}px` : "";
-    });
-    svg.addEventListener("pointerleave", () => {
-      cursor.setAttribute("visibility", "hidden");
-      tip.hidden = true;
-    });
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.innerHTML = `
+      <g class="grid">${grid}</g>
+      ${heatRects}
+      <path class="tgt" d="${tgt}"/>
+      <path class="cur" d="${cur}"/>
+      <line class="cursor" y1="${T}" y2="${T + plotH}" visibility="hidden"/>`;
   }
 }
 

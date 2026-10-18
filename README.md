@@ -67,14 +67,16 @@ The integration ships two dashboard cards. They are loaded automatically: no nee
 
 Both cards have a visual editor (*Edit dashboard → Add card → POER Overview / POER Thermostat*), or can be configured in YAML.
 
-**Heating history:** tap the flame icon on either card to open a chart of the last 24 hours (switchable to 6 h / 7 days)
+**Heating history:** tap the flame icon on either card to open a chart of the last day
 with the current temperature, the target temperature and the periods when the zone was heating, plus total heating time.
+Ranges: 1h, 3h, 6h, 12h, 1d, 1w, 2w, 1M. Drag the chart left / right to move in time, **Now** jumps back.
 It uses the Home Assistant recorder history of the `climate` entity, so nothing extra needs to be set up.
+The recorder keeps 10 days by default (`purge_keep_days`), so 2w / 1M show only what is still stored.
 
 ### POER Overview — `custom:poer-overview-card`
 
 Grid of thermostat tiles: current temperature, target, status (Home / Away / Off / Offline) and humidity.
-Zones that are heating get an orange stripe. Tap a tile to open its details.
+Zones that are heating get an orange stripe and background, and their status turns orange. Tap a tile to open its details.
 
 ```yaml
 type: custom:poer-overview-card
@@ -83,6 +85,8 @@ title_icon: mdi:radiator
 columns: 3
 background: true
 show_heating_count: true
+mobile_columns: 2
+mobile_show_groups: false
 groups:
   - 1st floor
   - 2nd floor
@@ -103,6 +107,8 @@ entities:
 | `columns` | number | no | `3` | Tiles per row, `1`–`8` |
 | `background` | boolean | no | `true` | `false` makes the card transparent, without border, shadow and padding |
 | `show_heating_count` | boolean | no | `true` | Show "Heating: N" in the header |
+| `mobile_columns` | number | no | `2` | Tiles per row on screens up to 600 px wide, `1`–`8` |
+| `mobile_show_groups` | boolean | no | `true` | Show group titles on screens up to 600 px wide |
 | `groups` | list of strings | no | — | Zone names, in display order. Thermostats without a group are shown last under "Other". |
 | `entities` | list | no | all POER thermostats | Thermostats to show, in display order. Each item is either an entity id (`climate.xxx`) or an object (see below). Thermostats not in the list are hidden. |
 

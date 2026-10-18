@@ -25,8 +25,10 @@ CARDS_PATH = Path(__file__).parent / "frontend" / "poer-cards.js"
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Serve the Lovelace cards and load them in the frontend."""
+    # 允许浏览器缓存: 移动端从后台恢复时网络可能尚未就绪, 无缓存会导致卡片脚本加载失败
+    # ("Custom element doesn't exist"); ?v= 保证更新后重新加载
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARDS_URL, str(CARDS_PATH), cache_headers=False)]
+        [StaticPathConfig(CARDS_URL, str(CARDS_PATH), cache_headers=True)]
     )
     # 文件修改时间作为版本号, 更新后浏览器会重新加载
     mtime = await hass.async_add_executor_job(lambda: int(CARDS_PATH.stat().st_mtime))
