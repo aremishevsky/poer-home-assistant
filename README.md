@@ -85,6 +85,7 @@ title_icon: mdi:radiator
 columns: 3
 background: true
 show_heating_count: true
+show_groups: true
 mobile_columns: 2
 mobile_show_groups: false
 groups:
@@ -107,6 +108,7 @@ entities:
 | `columns` | number | no | `3` | Tiles per row, `1`–`8` |
 | `background` | boolean | no | `true` | `false` makes the card transparent, without border, shadow and padding |
 | `show_heating_count` | boolean | no | `true` | Show "Heating: N" in the header |
+| `show_groups` | boolean | no | `true` | Show group titles on screens wider than 600 px |
 | `mobile_columns` | number | no | `2` | Tiles per row on screens up to 600 px wide, `1`–`8` |
 | `mobile_show_groups` | boolean | no | `true` | Show group titles on screens up to 600 px wide |
 | `groups` | list of strings | no | — | Zone names, in display order. Thermostats without a group are shown last under "Other". |

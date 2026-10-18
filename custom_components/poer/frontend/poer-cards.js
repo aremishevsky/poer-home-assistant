@@ -16,6 +16,7 @@
  *   columns: 3                             – optional, tiles per row
  *   background: true                       – false = transparent, no padding
  *   show_heating_count: true               – "Heating: N" in the header
+ *   show_groups: true                      – group titles on screens wider than 600px
  *   mobile_columns: 2                      – tiles per row on screens up to 600px
  *   mobile_show_groups: true               – group titles on screens up to 600px
  *   groups: [1st floor, 2nd floor]         – optional, group order
@@ -25,7 +26,7 @@
  *     - climate.office                     – no group
  */
 
-const VERSION = "1.0.1-dev-6";
+const VERSION = "1.0.1-dev-7";
 
 // hvac modes of the POER climate entity (see integration translations)
 const MODE_LABELS = { auto: "Home", heat: "Away", off: "Off" };
@@ -44,10 +45,13 @@ const OVERVIEW_DEFAULTS = {
   columns: 3,
   background: true,
   show_heating_count: true,
+  show_groups: true,
   mobile_columns: 2,
   mobile_show_groups: true,
 };
 const MOBILE_MAX_WIDTH = 600;
+// group titles hidden, the group grids still keep the gap between them
+const HIDE_GROUPS_CSS = ".group { display: none; } .grid + .group + .grid { margin-top: 8px; }";
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -469,7 +473,7 @@ class PoerOverviewCard extends HTMLElement {
         <div class="top"><span class="name">${esc(z.name)}</span><ha-icon class="flame" data-history title="History" icon="mdi:fire"></ha-icon></div>
         <div class="temps">
           <span class="temp">${fmt(z.current)}<small>°</small></span>
-          <span class="target muted">→ ${fmt(z.target)}°</span>
+          <span class="target muted"><span class="arr">→ </span>${fmt(z.target)}°</span>
         </div>
         <div class="bottom">
           <span class="badge ${status.cls}">${esc(status.label)}</span>
@@ -546,16 +550,25 @@ class PoerOverviewCard extends HTMLElement {
         .top ha-icon { --mdc-icon-size: 18px; }
         .top .flame { margin: -6px; padding: 6px; } /* bigger tap target */
         .name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .temps { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 6px; margin: 4px 0; }
-        .temp { font-size: 26px; font-weight: 300; }
-        .temp small { font-size: 14px; vertical-align: top; }
-        .target { font-size: 13px; white-space: nowrap; }
+        /* temperature and target stay on one line: fonts shrink with the tile width */
+        .tile { container-type: inline-size; }
+        .temps { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; margin: 4px 0; white-space: nowrap; }
+        .temp { flex: none; font-size: clamp(18px, 21cqi, 26px); font-weight: 300; }
+        .temp small { font-size: .55em; vertical-align: top; }
+        .target { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: clamp(11px, 10cqi, 13px); }
+        @container (max-width: 110px) {
+          .temp { font-size: 17px; }
+          .target .arr { display: none; }
+        }
         .bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; font-size: 12px; }
         .bottom ha-icon { --mdc-icon-size: 14px; }
         .empty { padding: 8px 0; }
+        @media (min-width: ${MOBILE_MAX_WIDTH + 1}px) {
+          ${c.show_groups === false ? HIDE_GROUPS_CSS : ""}
+        }
         @media (max-width: ${MOBILE_MAX_WIDTH}px) {
           .grid { grid-template-columns: repeat(${Number(c.mobile_columns) || 2}, minmax(0, 1fr)); }
-          ${c.mobile_show_groups === false ? ".group { display: none; } .grid + .group + .grid { margin-top: 8px; }" : ""}
+          ${c.mobile_show_groups === false ? HIDE_GROUPS_CSS : ""}
         }
       </style>
       <ha-card class="${c.background === false ? "no-bg" : ""}">
@@ -832,6 +845,7 @@ const OVERVIEW_SCHEMA = [
     schema: [
       { name: "background", selector: { boolean: {} } },
       { name: "show_heating_count", selector: { boolean: {} } },
+      { name: "show_groups", selector: { boolean: {} } },
     ],
   },
   {
@@ -852,6 +866,7 @@ const OVERVIEW_LABELS = {
   columns: "Tiles per row",
   background: "Card background",
   show_heating_count: "Show \"Heating: N\"",
+  show_groups: "Show group titles",
   mobile_columns: "Tiles per row",
   mobile_show_groups: "Show group titles",
 };
