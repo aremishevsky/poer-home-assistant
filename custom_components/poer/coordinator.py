@@ -39,7 +39,7 @@ class DeviceCoordinator(DataUpdateCoordinator):
         """Fetch device data from cloud."""
 
         try:
-            # 获取设备列表
+            # Device list
             devices_url = f"{self.api_url}/speaker/ha/v1.0"
             payload = {
                 "requestId": "111",
@@ -61,14 +61,14 @@ class DeviceCoordinator(DataUpdateCoordinator):
         except (KeyError, TypeError, ValueError) as e:
             raise UpdateFailed(f"Unexpected SYNC response: {e}") from e
 
-        # 获取每个设备的详细状态
+        # Detailed state of each device
         detailed_devices = []
         for device in devices:
             device_id = device["id"]
             try:
                 device_info = await self._async_query_device(device)
             except (aiohttp.ClientError, KeyError, TypeError, ValueError) as e:
-                # 单个设备失败不影响其他设备, 该设备将显示为不可用
+                # A failing device does not affect the others; it is shown as unavailable
                 _LOGGER.warning("Failed to get status for device %s: %s", device_id, e)
                 continue
             if device_info is not None:
@@ -128,8 +128,8 @@ class DeviceCoordinator(DataUpdateCoordinator):
                 "Unknown thermostat mode for device %s: %s", device_id, poerMode
             )
 
-        # 云端对离线设备仍返回 online=true 和最后缓存的数据,
-        # 出现不可能的状态(关机却在加热 / 设定温度超出范围)时视为离线
+        # The cloud keeps returning online=true and the last cached data for offline devices;
+        # an impossible state (off but heating / target above the range) means offline
         target = device_info["target_temp"]
         if device_info["online"] and (
             (poerMode == "off" and device_info["action"] == "heating")

@@ -34,7 +34,7 @@ async def async_setup_entry(
     """Set up climate platform."""
     coordinator: DeviceCoordinator = entry.runtime_data
 
-    # 为每个设备创建实体
+    # One entity per device
     entities = [
         POERThermostat(coordinator, device["device_id"]) for device in coordinator.data
     ]
@@ -46,7 +46,7 @@ async def async_setup_entry(
 class POERThermostat(POEREntity, ClimateEntity):
     """POER Thermostat entity."""
 
-    # 使用设备名称作为实体名称
+    # Entity name = device name
     _attr_name = None
     # translations: auto = Home, heat = Away, off = Off
     _attr_translation_key = "thermostat"
@@ -85,7 +85,7 @@ class POERThermostat(POEREntity, ClimateEntity):
         """Update entity attributes from device data."""
         data = self.device_data
 
-        # 基本属性
+        # Basic attributes
         self._attr_current_temperature = data.get("current_temp")
         self._attr_current_humidity = data.get("current_humidity")
         self._attr_target_temperature = data.get("target_temp")
@@ -94,7 +94,7 @@ class POERThermostat(POEREntity, ClimateEntity):
         # self._attr_target_temperature_low = data.get("temp_low")
         # self._attr_target_temperature_high = data.get("temp_high")
 
-        # 状态映射
+        # State mapping
         self._attr_hvac_mode = self._map_hvac_mode(data.get("mode"))
         self._attr_hvac_action = self._map_hvac_action(data.get("action"))
 
@@ -123,19 +123,19 @@ class POERThermostat(POEREntity, ClimateEntity):
         # target_temp_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
         # target_temp_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
 
-        # 准备API请求数据
+        # Prepare the API request
         endpoint, payload = None, None
 
         if temp is not None:
             endpoint = "set_temp"
             payload = {"temperature": temp}
-            self._attr_target_temperature = temp  # 乐观更新
+            self._attr_target_temperature = temp  # Optimistic update
             self.async_write_ha_state()
         # elif target_temp_low is not None and target_temp_high is not None:
         #     endpoint = "set_temp_range"
         #     payload = {"low": target_temp_low, "high": target_temp_high}
-        #     self._attr_target_temperature_low = target_temp_low  # 乐观更新
-        #     self._attr_target_temperature_high = target_temp_high  # 乐观更新
+        #     self._attr_target_temperature_low = target_temp_low  # Optimistic update
+        #     self._attr_target_temperature_high = target_temp_high  # Optimistic update
 
         if endpoint and payload:
             success = await self.coordinator.send_command(
@@ -143,10 +143,10 @@ class POERThermostat(POEREntity, ClimateEntity):
             )
 
             if not success:
-                self._update_attributes()  # 失败时恢复之前状态
+                self._update_attributes()  # Restore the previous state on failure
                 self.async_write_ha_state()
 
-            # 刷新数据以获取最新状态
+            # Refresh to get the latest state
             await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -162,17 +162,17 @@ class POERThermostat(POEREntity, ClimateEntity):
             _LOGGER.error("Unsupported mode: %s", hvac_mode)
             return
 
-        # 乐观更新
+        # Optimistic update
         self._attr_hvac_mode = hvac_mode
         self.async_write_ha_state()
 
-        # 发送命令
+        # Send the command
         success = await self.coordinator.send_command(
             self.device_id, "set_mode", {"mode": device_mode}
         )
 
         if not success:
-            self._update_attributes()  # 失败时恢复之前状态
+            self._update_attributes()  # Restore the previous state on failure
             self.async_write_ha_state()
 
         await self.coordinator.async_request_refresh()

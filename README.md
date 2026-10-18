@@ -153,13 +153,3 @@ show_modes: true
 | `controls` | string | no | `vertical` | `vertical`: chevrons above and below the target. `horizontal`: − and + to the left and right. |
 | `show_modes` | boolean | no | `true` | Show the Home / Away / Off buttons |
 
-
-### Config
-
-After setting up, you can config two parameters Settings -> Integrations -> LEDnetWF -> Config.
-
-- Disconnect delay or timeout: Timeout for bluetooth disconnect (0 for never)
-
-
-
-Thanks!
